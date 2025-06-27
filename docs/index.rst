@@ -1,20 +1,13 @@
-[UNDER CONSTRUCTION] Welcome to mach's documentation!
+mach
 ==============================================================
 
-This documentation is under construction.
+This documentation is under construction. For now, it mostly just includes the gallery of examples.
 
 .. toctree::
    :maxdepth: 2
    :caption: Gallery:
 
    example_gallery/index
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Auto-generated docs:
-
-   api
-
 
 Indices and tables
 ==================
