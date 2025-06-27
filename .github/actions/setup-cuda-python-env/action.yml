@@ -1,0 +1,46 @@
+name: "Setup CUDA Environment"
+description: "Set up CUDA environment with Python dependencies for beamforming"
+
+inputs:
+  python-version:
+    description: "Python version to use"
+    required: true
+    default: "3.11"
+  cuda-version:
+    description: "CUDA version to install"
+    required: true
+    default: "12.4.0"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install nvcc and CUDA runtime libraries for cupy
+      uses: Jimver/cuda-toolkit@v0.2.25
+      id: cuda-toolkit
+      with:
+        cuda: ${{ inputs.cuda-version }}
+        sub-packages: '["nvcc", "nvrtc"]'
+        non-cuda-sub-packages: '["libcurand", "libcublas"]'
+        method: "network"
+
+    - name: CUDA diagnostic info
+      run: |
+        nvidia-smi
+        nvcc --version
+      shell: bash
+
+    - name: Set up the environment
+      uses: ./.github/actions/setup-python-env
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Build cuda beamformer
+      run: make compile
+      shell: bash
+      env:
+        CC: gcc
+        CXX: g++
+
+    - name: Check CuPy/CUDA installation
+      run: uv run --with cupy-cuda12x python -c 'import cupy; cupy.show_config()'
+      shell: bash

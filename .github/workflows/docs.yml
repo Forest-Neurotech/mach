@@ -1,0 +1,53 @@
+name: Docs and example-gallery
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    # To limit Actions,
+    # don't automatically run on synchronize, but allow manual triggering
+    types: [opened, reopened, ready_for_review]
+    paths:
+      - "**"
+      - "!*.md"
+      - "!.bumpversion.toml"
+      - "!.gitignore"
+      - "!.github/workflows/*.yml"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch: # manual button click
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  docs:
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+        # Need to use a GPU to run the example gallery
+        os: ["linux-x64-nvidia-gpu-t4"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup CUDA environment
+        uses: ./.github/actions/setup-cuda-python-env
+        with:
+          python-version: ${{ matrix.python-version }}
+          cuda-version: "12.4.0"
+
+      - name: Build docs
+        run: make docs
+
+      - name: Upload docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs
+          include-hidden-files: true
+          path: docs/_build/
+          retention-days: 7

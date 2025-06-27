@@ -1,0 +1,5 @@
+example_gallery/
+gen_modules/
+generated/
+_build/
+sg_execution_times.rst

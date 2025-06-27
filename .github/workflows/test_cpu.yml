@@ -1,0 +1,50 @@
+name: Test-CPU
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    paths:
+      - "**"
+      - "!**.md"
+      - "!.bumpversion.toml"
+      - "!.gitignore"
+      - "!**.cu"
+      - "!**.h"
+      - "!CMakeLists.txt"
+      - "!.github/workflows/*.yml"
+      - ".github/workflows/test_cpu.yml"
+  workflow_dispatch: # manual button click
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test-cpu:
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install nvcc (CUDA compiler)
+        uses: Jimver/cuda-toolkit@v0.2.25
+        id: cuda-toolkit
+        with:
+          method: "network"
+          sub-packages: '["nvcc"]'
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run CPU-only unit tests
+        run: uv run --group test --group array pytest tests -v -s -m "no_cuda"

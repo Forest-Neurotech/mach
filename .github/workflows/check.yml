@@ -1,0 +1,31 @@
+name: Check
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch: # manual button click
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install nvcc (CUDA compiler)
+        uses: Jimver/cuda-toolkit@v0.2.25
+        id: cuda-toolkit
+        with:
+          method: "network"
+          sub-packages: '["nvcc"]'
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Check (lint)
+        run: make check

@@ -1,0 +1,82 @@
+name: Test-GPU
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    # To limit Actions,
+    # don't automatically run on synchronize, but allow manual triggering
+    types: [opened, reopened, ready_for_review]
+    paths:
+      - "**"
+      - "!**.md"
+      - "!.bumpversion.toml"
+      - "!.gitignore"
+      - "!.github/workflows/*.yml"
+      - ".github/workflows/test_gpu.yml"
+  workflow_dispatch: # manual button click
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test-gpu:
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+        os: ["linux-x64-nvidia-gpu-t4"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup CUDA environment
+        uses: ./.github/actions/setup-cuda-python-env
+        with:
+          python-version: ${{ matrix.python-version }}
+          cuda-version: "12.4.0"
+
+      - name: Run CUDA unit tests
+        run: make test
+
+
+  benchmark:
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+        os: ["linux-x64-nvidia-gpu-t4"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup CUDA environment
+        uses: ./.github/actions/setup-cuda-python-env
+        with:
+          python-version: ${{ matrix.python-version }}
+          cuda-version: "12.4.0"
+
+      - name: Run CUDA benchmark
+        run: make benchmark
+
+      - name: Plot benchmark (runtime)
+        run:
+          uv run --group compare tests/plot_benchmark.py --output .benchmarks/benchmark.png
+
+      - name: Plot benchmark (throughput)
+        run:
+          uv run --group compare tests/plot_benchmark.py --points-per-second --output .benchmarks/benchmark_pps.png
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          include-hidden-files: true
+          path: .benchmarks
+          retention-days: 7

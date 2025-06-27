@@ -1,0 +1,83 @@
+name: Build wheels
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "**"
+      - "!**.md"
+      - "!test_*.py"
+      - "!tests/**"
+      - "!.github/workflows/*.yml"
+      - ".github/workflows/wheels.yml"
+  push:
+    branches:
+      - main
+  release:
+    types:
+      - published
+
+jobs:
+  build_wheels:
+    name: Build linux wheels
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - name: Install CUDA
+      uses: Jimver/cuda-toolkit@v0.2.25
+      id: cuda-toolkit
+      with:
+        method: "network"
+        sub-packages: '["nvcc"]'
+
+    - name: CUDA diagnostic info
+      run: |
+        nvcc --version
+
+    - uses: pypa/cibuildwheel@v2.23
+
+    - name: Verify clean directory
+      run: git diff --exit-code
+      shell: bash
+
+    - name: Upload wheels
+      uses: actions/upload-artifact@v4
+      with:
+        path: wheelhouse/*.whl
+        name: dist-linux-wheels
+
+  upload_all:
+    name: Upload if release
+    needs: [build_wheels]
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'release' && github.event.action == 'published'
+    permissions:
+      contents: write
+
+    steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        # not using uv for caching, just publish, so workdir is empty
+        ignore-empty-workdir: true
+        # and cache is disabled
+        enable-cache: false
+
+    - name: Download wheels
+      uses: actions/download-artifact@v4
+      with:
+        path: dist
+        pattern: dist-*
+        merge-multiple: true
+
+    - name: Upload wheels to the GitHub Release that triggered this workflow
+      uses: softprops/action-gh-release@v2
+      with:
+        files: dist/*.whl
+
+    - name: Publish to PyPI
+      run: uv publish
+      # https://docs.pypi.org/trusted-publishers/adding-a-publisher/
