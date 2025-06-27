@@ -86,8 +86,7 @@ We welcome [feature requests](https://github.com/Forest-Neurotech/mach/issues)!
 mach builds upon the excellent work of the ultrasound imaging community:
 
 * **[vbeam](https://github.com/magnusdk/vbeam)** - For educational examples and validation benchmarks
-* **[PyMUST](https://github.com/creatis-ULTIM/PyMUST)** - For MUST simulator integration and testing
-* **[PICMUS](https://www.creatis.insa-lyon.fr/Challenge/IEEE_IUS_2016/)** - For standardized evaluation datasets
+* **[PyMUST](https://github.com/creatis-ULTIM/PyMUST) / [PICMUS](https://www.creatis.insa-lyon.fr/Challenge/IEEE_IUS_2016/)** - For standardized evaluation datasets
 * **Community contributors** - Gev and Qi for CUDA optimization guidance
 
 ## Citation
