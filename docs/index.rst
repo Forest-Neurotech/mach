@@ -7,11 +7,8 @@ mach
 
 **mach** is an ultrafast CUDA-accelerated ultrasound beamformer for Python users, developed at Forest Neurotech.
 
-.. toctree::
-   :maxdepth: 2
-   :caption: README:
-
-   readme
+.. include:: ../README.md
+   :parser: myst_parser.sphinx_
 
 .. toctree::
    :maxdepth: 1
