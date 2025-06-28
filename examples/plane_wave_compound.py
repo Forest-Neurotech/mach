@@ -12,6 +12,11 @@ provides standardized datasets for evaluating plane wave imaging algorithms.
 - Beamform data from multiple plane-wave transmits
 - Coherently compound the results
 - Visualize the results
+
+Attribution:
+
+- Example inspired by vbeam examples (https://github.com/magnusdk/vbeam/)
+- Dataset from PICMUS challenge (https://www.creatis.insa-lyon.fr/Challenge/IEEE_IUS_2016/)
 """
 
 # %%

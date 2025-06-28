@@ -41,9 +41,13 @@ extensions = [
     "sphinx_gallery.gen_gallery",
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
+    "myst_parser",
 ]
 
 autosummary_generate = True
+
+# Source file suffixes
+source_suffix = [".rst", ".md"]
 
 # Add any paths that contain templates here, relative to this directory.
 # templates_path = ["_templates"]
@@ -71,7 +75,7 @@ sphinx_gallery_conf = {
     # path to your example scripts
     "examples_dirs": ["../examples"],
     # path to where to save gallery generated output
-    "gallery_dirs": ["example_gallery"],
+    "gallery_dirs": ["examples"],
     # execute ALL examples/*.py files
     "filename_pattern": "/*",
     # specify that examples should be ordered according to filename

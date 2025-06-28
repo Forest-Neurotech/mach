@@ -1,17 +1,21 @@
 mach
 ==============================================================
 
-This documentation is under construction. For now, it mostly just includes the gallery of examples.
+.. note::
+
+   🚧 This documentation is under construction.
+
+**mach** is an ultrafast CUDA-accelerated ultrasound beamformer for Python users, developed at Forest Neurotech.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Gallery:
+   :caption: README:
 
-   example_gallery/index
+   readme
 
-Indices and tables
-==================
+.. toctree::
+   :maxdepth: 1
+   :caption: Examples:
+n
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+   examples/index
