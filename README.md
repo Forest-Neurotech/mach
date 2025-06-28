@@ -51,12 +51,12 @@ Build prerequisites:
 
 ## Examples
 
-Try our examples:
+Try our [examples](https://forest-neurotech.github.io/mach/examples/):
 
 * [📊 Plane Wave Imaging with PICMUS Dataset](examples/plane_wave_compound.py)
 * [🩸 Doppler Imaging](examples/doppler.py)
 
-If you don't have a CUDA-enabled GPU, you can download the notebook from the docs and open in Google Colab (select a GPU instance).
+If you don't have a CUDA-enabled GPU, you can download the notebook from the [docs](https://forest-neurotech.github.io/mach/examples/) and open in Google Colab (select a GPU instance).
 
 ## Contributing
 
