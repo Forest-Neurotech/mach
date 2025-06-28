@@ -16,6 +16,5 @@ mach
 .. toctree::
    :maxdepth: 1
    :caption: Examples:
-n
 
    examples/index
