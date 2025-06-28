@@ -7,7 +7,7 @@ This documentation is under construction. For now, it mostly just includes the g
    :maxdepth: 2
    :caption: Gallery:
 
-   example_gallery/index
+   examples/index
 
 Indices and tables
 ==================
