@@ -13,6 +13,7 @@ from array_api_compat import array_namespace
 from scipy.signal import hilbert
 
 from mach._array_api import ArrayAPIConformant
+from mach.geometry import ultrasound_angles_to_cartesian
 from mach.wavefront import plane
 
 Array = TypeVar("Array", bound=ArrayAPIConformant)
@@ -29,22 +30,12 @@ def extract_wave_directions(sequence: list[Any], xp) -> list:
     Returns:
         List of direction vectors as arrays
     """
-    directions = []
-    for wave in sequence:
-        azimuth = xp.asarray(wave.source.azimuth)
-        elevation = xp.asarray(wave.source.elevation)
-
-        direction = xp.asarray([
-            xp.sin(azimuth) * xp.cos(elevation),
-            xp.sin(elevation),
-            xp.cos(azimuth) * xp.cos(elevation),
-        ])
-        directions.append(direction)
-
-    return directions
+    azimuth = xp.asarray([wave.source.azimuth for wave in sequence])
+    elevation = xp.asarray([wave.source.elevation for wave in sequence])
+    return ultrasound_angles_to_cartesian(azimuth, elevation)
 
 
-def compute_tx_arrivals_ss(
+def compute_tx_wave_arrivals_s(
     directions: list, scan_coords_m: Array, speed_of_sound: float, origin: Optional[Array] = None, xp=None
 ) -> Array:
     """
@@ -66,14 +57,14 @@ def compute_tx_arrivals_ss(
     if origin is None:
         origin = xp.asarray([0.0, 0.0, 0.0])
 
-    tx_arrivals_ss = []
+    tx_wave_arrivals_s = []
     for direction in directions:
         # The plane function is array-API compatible, so we can pass arrays directly
         arrival = plane(origin, scan_coords_m, direction)
-        tx_arrivals_ss.append(arrival / speed_of_sound)
+        tx_wave_arrivals_s.append(arrival / speed_of_sound)
 
     # Stack all arrivals into a single array with shape (n_transmits, n_points)
-    return xp.stack(tx_arrivals_ss, axis=0)
+    return xp.stack(tx_wave_arrivals_s, axis=0)
 
 
 def preprocess_signal(signal_data: Array, modulation_frequency: float, xp=None) -> Array:
@@ -167,7 +158,7 @@ def create_beamforming_setup(channel_data, scan, f_number: float = 1.7, xp=None)
 
     # Compute transmit arrivals for all transmits
     directions = extract_wave_directions(channel_data.sequence, xp or np)
-    tx_arrivals_ss = compute_tx_arrivals_ss(directions, scan_coords_m, speed_of_sound, xp=xp)
+    tx_wave_arrivals_s = compute_tx_wave_arrivals_s(directions, scan_coords_m, speed_of_sound, xp=xp)
 
     # Extract timing information for all transmits
     rx_delays = extract_sequence_delays(channel_data.sequence, xp)
@@ -176,7 +167,7 @@ def create_beamforming_setup(channel_data, scan, f_number: float = 1.7, xp=None)
         "channel_data": signal,
         "rx_coords_m": rx_coords_m,
         "scan_coords_m": scan_coords_m,
-        "tx_wave_arrivals_s": tx_arrivals_ss,
+        "tx_wave_arrivals_s": tx_wave_arrivals_s,
         "out": None,
         "f_number": f_number,
         "sampling_freq_hz": sampling_freq_hz,
