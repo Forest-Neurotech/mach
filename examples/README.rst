@@ -1,4 +1,4 @@
-Examples Gallery
+Gallery
 ================
 
 This directory contains tutorial examples demonstrating mach capabilities.
