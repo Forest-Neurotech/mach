@@ -11,6 +11,8 @@ on:
     paths:
       - "**"
       - "!**.md"
+      - "!**.rst"
+      - "!docs/**"
       - "!.bumpversion.toml"
       - "!.gitignore"
       - "!.github/workflows/*.yml"

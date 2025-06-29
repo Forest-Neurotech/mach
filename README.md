@@ -9,7 +9,7 @@ An ultrafast CUDA-accelerated ultrasound beamformer for Python users. Developed 
 
 ![Benchmark Results](assets/benchmark-doppler_disk.svg)
 
-_Beamforming PyMUST's [rotating-disk Doppler dataset](https://github.com/creatis-ULTIM/PyMUST/blob/170ba68/examples/rotatingDisk_real.ipynb) at 0.86 trillion points per second (**5**x the speed of sound)_
+_Beamforming PyMUST's [rotating-disk Doppler dataset](https://github.com/creatis-ULTIM/PyMUST/blob/170ba68/examples/rotatingDisk_real.ipynb) at 0.86 trillion points per second (**5**x the speed of sound)._
 
 > **⚠️ Alpha Release**
 >
@@ -21,13 +21,13 @@ _Beamforming PyMUST's [rotating-disk Doppler dataset](https://github.com/creatis
 * ⚡ **Ultra-fast beamforming**: ~10x faster than prior state-of-the-art
 * 🚀 **GPU-accelerated**: Leverages CUDA for maximum performance on NVIDIA GPUs
 * 🎯 **Optimized for research**: Designed for functional ultrasound imaging (fUSI) and other ultrafast, high-channel-count, or volumetric-ensemble imaging
-* 🐍 **Python bindings**: Zero-copy integration with CuPy, and JAX arrays via [nanobind](https://nanobind.readthedocs.io/en/latest/index.html). NumPy support included.`
-* 🔬 **Validated**: Matches [vbeam](https://github.com/magnusdk/vbeam) and [PyMUST](https://github.com/creatis-ULTIM/PyMUST) [outputs](tests/compare)
+* 🐍 **Python bindings**: Zero-copy integration with CuPy, and JAX arrays via [nanobind](https://nanobind.readthedocs.io/en/latest/index.html). NumPy support included.
+* 🔬 **Validated**: Matches [vbeam](https://github.com/magnusdk/vbeam) and [PyMUST](https://github.com/creatis-ULTIM/PyMUST) [outputs](https://github.com/Forest-Neurotech/mach/tree/812062f/tests/compare)
 
 
 ## Installation
 
-Install from PyPI:
+### Install from PyPI (recommended):
 
 ```bash
 pip install mach-beamform
@@ -37,7 +37,7 @@ Wheel prerequisites:
 * [Linux](https://github.com/pypa/manylinux)
 * CUDA-enabled GPU with driver >= 12.3, [compute-capability >= 7.5](https://developer.nvidia.com/cuda-gpus)
 
-Or, to build from source:
+### Build from source
 
 ```bash
 make compile
@@ -60,7 +60,7 @@ If you don't have a CUDA-enabled GPU, you can download the notebook from the [do
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](https://github.com/Forest-Neurotech/mach/blob/812062f/CONTRIBUTING.md) for guidelines.
 
 ## Roadmap
 
