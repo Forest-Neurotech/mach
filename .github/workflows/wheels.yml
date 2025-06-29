@@ -6,6 +6,8 @@ on:
     paths:
       - "**"
       - "!**.md"
+      - "!**.rst"
+      - "!docs/**"
       - "!test_*.py"
       - "!tests/**"
       - "!.github/workflows/*.yml"
