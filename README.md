@@ -22,7 +22,7 @@ _Beamforming PyMUST's [rotating-disk Doppler dataset](https://github.com/creatis
 * 🚀 **GPU-accelerated**: Leverages CUDA for maximum performance on NVIDIA GPUs
 * 🎯 **Optimized for research**: Designed for functional ultrasound imaging (fUSI) and other ultrafast, high-channel-count, or volumetric-ensemble imaging
 * 🐍 **Python bindings**: Zero-copy integration with CuPy, and JAX arrays via [nanobind](https://nanobind.readthedocs.io/en/latest/index.html). NumPy support included.
-* 🔬 **Validated**: Matches [vbeam](https://github.com/magnusdk/vbeam) and [PyMUST](https://github.com/creatis-ULTIM/PyMUST) [outputs](tests/compare)
+* 🔬 **Validated**: Matches [vbeam](https://github.com/magnusdk/vbeam) and [PyMUST](https://github.com/creatis-ULTIM/PyMUST) [outputs](https://github.com/Forest-Neurotech/mach/tree/812062f/tests/compare)
 
 
 ## Installation
@@ -60,7 +60,7 @@ If you don't have a CUDA-enabled GPU, you can download the notebook from the [do
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](https://github.com/Forest-Neurotech/mach/blob/812062f/CONTRIBUTING.md) for guidelines.
 
 ## Roadmap
 
