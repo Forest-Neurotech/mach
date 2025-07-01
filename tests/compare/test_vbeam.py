@@ -190,6 +190,69 @@ def picmus_phantom_resolution_beamform_kwargs(
 
 
 # ============================================================================
+# Single Transmit Test Fixtures
+# ============================================================================
+
+
+@pytest.fixture(scope="module", params=[0, 1, 10, 37, 74])
+def transmit_idx(request):
+    """Parametrized transmit index for single-transmit testing."""
+    return request.param
+
+
+@pytest.fixture(scope="module")
+def vbeam_setup_uff_single_transmit(vbeam_setup_uff: SignalForPointSetup, transmit_idx: int) -> SignalForPointSetup:
+    """Create a single-transmit vbeam setup from the full UFF setup."""
+    import copy
+    import jax.numpy as jnp
+
+    # Deep copy the setup to avoid modifying the original
+    single_setup = copy.deepcopy(vbeam_setup_uff)
+
+    # Extract single transmit data
+    full_signal = single_setup.signal  # Shape: (transmits, receivers, samples)
+    single_signal = full_signal[transmit_idx : transmit_idx + 1, :, :]  # Keep transmit dimension as 1
+
+    # Update the signal data
+    single_setup.signal = single_signal
+
+    # Update wave data to single transmit
+    single_setup.wave_data = single_setup.wave_data.__replace__(
+        azimuth=single_setup.wave_data.azimuth[transmit_idx : transmit_idx + 1],
+        elevation=single_setup.wave_data.elevation[transmit_idx : transmit_idx + 1],
+        source=single_setup.wave_data.source[transmit_idx : transmit_idx + 1],
+        t0=single_setup.wave_data.t0[transmit_idx : transmit_idx + 1],
+    )
+
+    return single_setup
+
+
+@pytest.fixture(scope="module")
+def mach_single_transmit_kwargs(picmus_phantom_resolution_beamform_kwargs: dict, transmit_idx: int) -> dict:
+    """Create single-transmit mach kwargs from the full multi-transmit setup."""
+    kwargs = picmus_phantom_resolution_beamform_kwargs.copy()
+
+    # Extract single transmit data
+    channel_data = kwargs["channel_data"]  # Shape: (n_transmits, n_rx, n_samples, n_frames)
+    single_channel_data = channel_data[transmit_idx]  # Shape: (n_rx, n_samples, n_frames)
+
+    tx_wave_arrivals_s = kwargs["tx_wave_arrivals_s"]  # Shape: (n_transmits, n_points)
+    single_tx_arrivals = tx_wave_arrivals_s[transmit_idx]  # Shape: (n_points,)
+
+    rx_start_s = kwargs["rx_start_s"]  # Shape: (n_transmits,)
+    single_rx_start = rx_start_s[transmit_idx]  # Scalar
+
+    # Update kwargs for single transmit - use kernel.beamform instead of experimental.beamform
+    kwargs.update({
+        "channel_data": single_channel_data,
+        "tx_wave_arrivals_s": single_tx_arrivals,
+        "rx_start_s": single_rx_start,  # kernel.beamform expects scalar, not array
+    })
+
+    return kwargs
+
+
+# ============================================================================
 # Unified Tests (Correctness + Benchmarking)
 # ============================================================================
 
@@ -221,7 +284,7 @@ def test_vbeam_benchmark(benchmark, vbeam_pymust_setup, output_dir):
 
     # Prepare input data
     vbeam_data = vbeam_pymust_setup.data
-    grid_shape = vbeam_pymust_setup.scan.shape
+    grid_shape = vbeam_data["signal"].shape
     num_frames = vbeam_data["signal"].shape[0]
 
     def vbeam_beamform():
@@ -257,6 +320,80 @@ def test_vbeam_benchmark(benchmark, vbeam_pymust_setup, output_dir):
             our_label="vbeam",
         )
         print("Saved debug figures to", output_dir)
+
+
+@pytest.mark.skipif(not HAS_CUPY, reason="CuPy not available")
+@pytest.mark.filterwarnings("ignore:array is not contiguous, rearranging will add latency:UserWarning")
+def test_mach_matches_vbeam_single_transmit(
+    mach_single_transmit_kwargs: dict,
+    vbeam_setup_uff_single_transmit: SignalForPointSetup,
+    transmit_idx: int,
+    output_dir,
+):
+    """Test mach vs vbeam on a single plane wave transmit to isolate core beamforming differences."""
+    from mach import kernel
+
+    grid_shape = vbeam_setup_uff_single_transmit.scan.shape
+
+    print(f"\n=== Testing single transmit {transmit_idx} ===")
+    print(f"mach kwargs keys: {list(mach_single_transmit_kwargs.keys())}")
+
+    # Run mach single-transmit beamforming using kernel.beamform directly
+    gpu_result = kernel.beamform(**mach_single_transmit_kwargs)
+    result = cp.asnumpy(gpu_result)
+    # Reshape to (x, z)
+    result = result.reshape(grid_shape)
+
+    # Verify basic properties
+    assert np.isfinite(result).all()
+
+    # Run vbeam single-transmit beamforming
+    beamformer = get_das_beamformer(
+        vbeam_setup_uff_single_transmit,
+        compensate_for_apodization_overlap=False,
+        log_compress=False,
+        scan_convert=False,
+    )
+    vbeam_result_jax = beamformer(**vbeam_setup_uff_single_transmit.data).block_until_ready()
+    vbeam_result = np.asarray(vbeam_result_jax)
+
+    # Debug output for single transmit
+    print(
+        f"Single transmit {transmit_idx} - Complex ratio (mach/vbeam) mean: {(result / (vbeam_result + 1e-10)).mean():.6f}"
+    )
+    print(
+        f"Single transmit {transmit_idx} - Magnitude ratio (mach/vbeam) mean: {(np.abs(result) / (np.abs(vbeam_result) + 1e-10)).mean():.6f}"
+    )
+
+    # Check data shapes and types
+    print(f"mach result shape: {result.shape}, dtype: {result.dtype}")
+    print(f"vbeam result shape: {vbeam_result.shape}, dtype: {vbeam_result.dtype}")
+
+    # Save debug output if requested
+    if output_dir is not None:
+        output_dir = output_dir / "single_transmit_comparison" / f"transmit_{transmit_idx}"
+        save_debug_figures(
+            our_result=np.abs(result),
+            reference_result=np.abs(vbeam_result),
+            grid_shape=grid_shape,
+            x_axis=vbeam_setup_uff_single_transmit.scan.x,
+            z_axis=vbeam_setup_uff_single_transmit.scan.z,
+            output_dir=output_dir,
+            test_name=f"single_transmit_{transmit_idx}",
+            our_label="mach",
+            reference_label="vbeam",
+        )
+        print(f"Saved single transmit {transmit_idx} debug figures to {output_dir}")
+
+    # Compare with appropriate tolerances for single transmit
+    # Expect better agreement for single transmit than compound
+    np.testing.assert_allclose(
+        actual=result,
+        desired=vbeam_result,
+        atol=0.5,  # Slightly stricter than compound test
+        rtol=1 / 40,  # Slightly stricter than compound test
+        err_msg=f"mach single transmit {transmit_idx} results do not match vbeam within expected tolerances",
+    )
 
 
 @pytest.mark.skipif(not HAS_CUPY, reason="CuPy not available")
