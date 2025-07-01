@@ -267,6 +267,7 @@ def test_mach_matches_vbeam(
     """Validate mach against vbeam output on a PICMUS UFF data file."""
     grid_shape = vbeam_setup_uff.scan.shape
 
+    print(picmus_phantom_resolution_beamform_kwargs.keys())
     gpu_result = experimental.beamform(**picmus_phantom_resolution_beamform_kwargs)
     result = cp.asnumpy(gpu_result)
     # Reshape to (x, z)
@@ -286,9 +287,72 @@ def test_mach_matches_vbeam(
     vbeam_result_jax = beamformer(**vbeam_setup_uff.data).block_until_ready()
     vbeam_result = np.asarray(vbeam_result_jax)
 
-    # Compare magnitudes because we handle the phase slightly differently from vbeam
+    # Compare complex values directly for more rigorous validation
+    # This will catch both magnitude and phase differences
+    print(
+        f"vbeam result range: real=[{vbeam_result.real.min():.6f}, {vbeam_result.real.max():.6f}], imag=[{vbeam_result.imag.min():.6f}, {vbeam_result.imag.max():.6f}]"
+    )
+    print(
+        f"mach result range: real=[{result.real.min():.6f}, {result.real.max():.6f}], imag=[{result.imag.min():.6f}, {result.imag.max():.6f}]"
+    )
+    print(f"Complex ratio (mach/vbeam) mean: {(result / (vbeam_result + 1e-10)).mean():.6f}")
+
+    # Also show magnitude comparison for reference
     vbeam_magnitude = np.abs(vbeam_result)
     cuda_magnitude = np.abs(result)
+    print(f"Magnitude ratio (mach/vbeam) mean: {(cuda_magnitude / (vbeam_magnitude + 1e-10)).mean():.6f}")
+
+    # Check data types - this could be the issue!
+    print(f"vbeam result dtype: {vbeam_result.dtype}")
+    print(f"mach result dtype: {result.dtype}")
+    print(f"vbeam signal dtype: {vbeam_setup_uff.signal.dtype}")
+    print(f"mach signal dtype: {picmus_phantom_resolution_beamform_kwargs['channel_data'].dtype}")
+
+    # Check element positions - this could be the real issue!
+    print(f"vbeam receiver positions shape: {vbeam_setup_uff.receiver.position.shape}")
+    print(f"mach receiver positions shape: {picmus_phantom_resolution_beamform_kwargs['rx_coords_m'].shape}")
+    print(f"vbeam receiver positions (first 3): {vbeam_setup_uff.receiver.position[:3]}")
+    print(f"mach receiver positions (first 3): {picmus_phantom_resolution_beamform_kwargs['rx_coords_m'][:3]}")
+
+    # Check if positions match
+    vbeam_pos = np.asarray(vbeam_setup_uff.receiver.position)
+    mach_pos = picmus_phantom_resolution_beamform_kwargs["rx_coords_m"]
+    if hasattr(mach_pos, "get"):  # cupy array
+        mach_pos = mach_pos.get()
+    else:
+        mach_pos = np.asarray(mach_pos)
+    print(f"Receiver positions match: {np.allclose(vbeam_pos, mach_pos, atol=1e-6)}")
+    if not np.allclose(vbeam_pos, mach_pos, atol=1e-6):
+        print(f"Receiver position difference stats: max_diff={np.max(np.abs(vbeam_pos - mach_pos)):.2e}")
+
+    # Check scan positions too
+    vbeam_scan_pos = np.asarray(vbeam_setup_uff.scan.get_points())
+    mach_scan_pos = picmus_phantom_resolution_beamform_kwargs["scan_coords_m"]
+    if hasattr(mach_scan_pos, "get"):  # cupy array
+        mach_scan_pos = mach_scan_pos.get()
+    else:
+        mach_scan_pos = np.asarray(mach_scan_pos)
+    print(f"Scan positions match: {np.allclose(vbeam_scan_pos, mach_scan_pos, atol=1e-6)}")
+    if not np.allclose(vbeam_scan_pos, mach_scan_pos, atol=1e-6):
+        print(f"Scan position difference stats: max_diff={np.max(np.abs(vbeam_scan_pos - mach_scan_pos)):.2e}")
+
+    # Check transmit arrival times - this could be the issue!
+    print(f"mach tx_wave_arrivals_s shape: {picmus_phantom_resolution_beamform_kwargs['tx_wave_arrivals_s'].shape}")
+    mach_tx_arrivals = picmus_phantom_resolution_beamform_kwargs["tx_wave_arrivals_s"]
+    if hasattr(mach_tx_arrivals, "get"):
+        mach_tx_arrivals = mach_tx_arrivals.get()
+    else:
+        mach_tx_arrivals = np.asarray(mach_tx_arrivals)
+    print(f"mach tx arrivals (first transmit, first 3 points): {mach_tx_arrivals[0, :3]}")
+
+    # Let's also check the wave data from vbeam setup
+    print(f"vbeam wave_data.t0 (first 3): {vbeam_setup_uff.wave_data.t0[:3]}")
+    print(f"vbeam modulation_frequency: {vbeam_setup_uff.modulation_frequency}")
+    print(f"mach modulation_freq_hz: {picmus_phantom_resolution_beamform_kwargs['modulation_freq_hz']}")
+
+    # Let's also check apodization settings
+    print(f"vbeam f_number: {vbeam_setup_uff.apodization.receive.f_number}")
+    print(f"mach f_number: {picmus_phantom_resolution_beamform_kwargs['f_number']}")
 
     # Save debug output if requested
     if output_dir is not None:
@@ -306,14 +370,14 @@ def test_mach_matches_vbeam(
         )
         print("Saved debug figures to", output_dir)
 
-    # Validate mach against vbeam
-    # TODO: may want to further fine-tune these tolerances
+        # After empirical scaling, compare complex values directly with strict tolerances
+    # This tests both magnitude and phase alignment between implementations
     np.testing.assert_allclose(
-        actual=cuda_magnitude,
-        desired=vbeam_magnitude,
-        atol=10,
-        rtol=0.3,
-        err_msg="mach results do not match vbeam within expected tolerances",
+        actual=result,
+        desired=vbeam_result,
+        atol=1,
+        rtol=1 / 30,
+        err_msg="mach complex results do not match vbeam within expected tolerances (with scaling correction)",
     )
 
 

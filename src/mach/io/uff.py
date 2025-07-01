@@ -46,6 +46,7 @@ def compute_tx_wave_arrivals_s(
         scan_coords_m: Output positions for beamforming (N, 3) in meters
         speed_of_sound: Speed of sound in the medium
         origin: Wave origin point, defaults to [0, 0, 0]
+            Can also be parsed from ultrasound_angles_to_cartesian(channel_data.sequence[idx].origin)
         xp: Array namespace (optional, will be inferred from scan_coords_m)
 
     Returns:
@@ -163,6 +164,14 @@ def create_beamforming_setup(channel_data, scan, f_number: float = 1.7, xp=None)
     # Extract timing information for all transmits
     rx_delays = extract_sequence_delays(channel_data.sequence, xp)
 
+    # Account for initial_time offset (this is how vbeam handles it)
+    # The initial_time represents when the first sample was acquired relative to t=0
+    initial_time = float(channel_data.initial_time)
+    if xp is not None and hasattr(xp, "asarray"):
+        rx_start_s = rx_delays - xp.asarray(initial_time)
+    else:
+        rx_start_s = rx_delays - initial_time
+
     return {
         "channel_data": signal,
         "rx_coords_m": rx_coords_m,
@@ -173,7 +182,7 @@ def create_beamforming_setup(channel_data, scan, f_number: float = 1.7, xp=None)
         "sampling_freq_hz": sampling_freq_hz,
         "sound_speed_m_s": speed_of_sound,
         "modulation_freq_hz": modulation_frequency,
-        "rx_start_s": rx_delays,
+        "rx_start_s": rx_start_s,
     }
 
 
@@ -200,6 +209,10 @@ def create_single_transmit_beamforming_setup(
     single_setup = multi_setup.copy()
     single_setup["channel_data"] = multi_setup["channel_data"][wave_index]  # Remove transmit dimension
     single_setup["tx_wave_arrivals_s"] = multi_setup["tx_wave_arrivals_s"][wave_index]  # Remove transmit dimension
-    single_setup["rx_start_s"] = multi_setup["rx_start_s"][wave_index]
+    single_setup["rx_start_s"] = (
+        multi_setup["rx_start_s"][wave_index]
+        if hasattr(multi_setup["rx_start_s"], "__getitem__")
+        else multi_setup["rx_start_s"]
+    )
 
     return single_setup
