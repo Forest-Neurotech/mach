@@ -95,7 +95,7 @@ def save_debug_figures(
     if reference_result is not None:
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-        max_value = max(np.max(np.abs(our_img)), np.max(np.abs(ref_img)))
+        max_value = max(np.max(np.abs(our_img)), np.max(np.abs(ref_img)), 1e-12)
 
         # Our result - convert to dB
         our_img_db = db(our_img / max_value)
@@ -131,15 +131,15 @@ def save_debug_figures(
         cbar3 = plt.colorbar(im3, ax=axes[1, 0])
         cbar3.set_label("Linear")
 
-        # Relative difference
-        rel_diff = np.abs(diff_img) / (np.abs(ref_img) + 1e-10)
-        cmap = copy(plt.cm.hot)
-        cmap.set_over("blue", 1.0)
-        im4 = axes[1, 1].imshow(rel_diff.T, aspect="auto", origin="upper", cmap=cmap, extent=extent, vmin=0, vmax=1)
-        axes[1, 1].set_title("Relative Difference")
+        # Relative difference in dB
+        # Calculate dB difference: 20*log10(our/ref) = 20*log10(our) - 20*log10(ref)
+        diff_db = db(diff_img / max_value)
+        im4 = axes[1, 1].imshow(diff_db.T, aspect="auto", origin="upper", cmap="hot", extent=extent, vmin=-140, vmax=0)
+        axes[1, 1].set_title("Difference (dB, 0dB = max(ref, our))")
         axes[1, 1].set_xlabel("Lateral [cm]")
         axes[1, 1].set_ylabel("Depth [cm]")
-        plt.colorbar(im4, ax=axes[1, 1], extend="max")
+        cbar4 = plt.colorbar(im4, ax=axes[1, 1])
+        cbar4.set_label("dB")
 
     else:
         fig, ax = plt.subplots(1, 1, figsize=(8, 6))
