@@ -284,7 +284,7 @@ def test_vbeam_benchmark(benchmark, vbeam_pymust_setup, output_dir):
 
     # Prepare input data
     vbeam_data = vbeam_pymust_setup.data
-    grid_shape = vbeam_data["signal"].shape
+    grid_shape = vbeam_pymust_setup.scan.shape
     num_frames = vbeam_data["signal"].shape[0]
 
     def vbeam_beamform():
