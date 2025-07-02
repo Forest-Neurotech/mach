@@ -39,7 +39,7 @@ from vbeam.wavefront import PlaneWavefront, ReflectedWavefront
 
 from mach import experimental, kernel
 from mach._vis import save_debug_figures
-from mach.io.uff import create_beamforming_setup
+from mach.io.uff import create_beamforming_setup, create_single_transmit_beamforming_setup
 
 # ============================================================================
 # Fixtures
@@ -178,7 +178,7 @@ def vbeam_setup_uff(
 
 
 @pytest.fixture(scope="module")
-def picmus_phantom_resolution_beamform_kwargs(
+def mach_beamform_kwargs(
     picmus_phantom_resolution_channel_data: ChannelData, picmus_phantom_resolution_scan: Scan
 ) -> dict:
     """mach kwargs for UFF data."""
@@ -203,52 +203,20 @@ def transmit_idx(request):
 @pytest.fixture(scope="module")
 def vbeam_setup_uff_single_transmit(vbeam_setup_uff: SignalForPointSetup, transmit_idx: int) -> SignalForPointSetup:
     """Create a single-transmit vbeam setup from the full UFF setup."""
-    import copy
-
-    # Deep copy the setup to avoid modifying the original
-    single_setup = copy.deepcopy(vbeam_setup_uff)
-
-    # Extract single transmit data
-    full_signal = single_setup.signal  # Shape: (transmits, receivers, samples)
-    single_signal = full_signal[transmit_idx : transmit_idx + 1, :, :]  # Keep transmit dimension as 1
-
-    # Update the signal data
-    single_setup.signal = single_signal
-
-    # Update wave data to single transmit
-    single_setup.wave_data = single_setup.wave_data.__replace__(
-        azimuth=single_setup.wave_data.azimuth[transmit_idx : transmit_idx + 1],
-        elevation=single_setup.wave_data.elevation[transmit_idx : transmit_idx + 1],
-        source=single_setup.wave_data.source[transmit_idx : transmit_idx + 1],
-        t0=single_setup.wave_data.t0[transmit_idx : transmit_idx + 1],
-    )
-
-    return single_setup
+    return vbeam_setup_uff.slice["transmits", transmit_idx]
 
 
 @pytest.fixture(scope="module")
-def mach_single_transmit_kwargs(picmus_phantom_resolution_beamform_kwargs: dict, transmit_idx: int) -> dict:
-    """Create single-transmit mach kwargs from the full multi-transmit setup."""
-    kwargs = picmus_phantom_resolution_beamform_kwargs.copy()
-
-    # Extract single transmit data
-    channel_data = kwargs["channel_data"]  # Shape: (n_transmits, n_rx, n_samples, n_frames)
-    single_channel_data = channel_data[transmit_idx]  # Shape: (n_rx, n_samples, n_frames)
-
-    tx_wave_arrivals_s = kwargs["tx_wave_arrivals_s"]  # Shape: (n_transmits, n_points)
-    single_tx_arrivals = tx_wave_arrivals_s[transmit_idx]  # Shape: (n_points,)
-
-    rx_start_s = kwargs["rx_start_s"]  # Shape: (n_transmits,)
-    single_rx_start = rx_start_s[transmit_idx]  # Scalar
-
-    # Update kwargs for single transmit - use kernel.beamform instead of experimental.beamform
-    kwargs.update({
-        "channel_data": single_channel_data,
-        "tx_wave_arrivals_s": single_tx_arrivals,
-        "rx_start_s": single_rx_start,  # kernel.beamform expects scalar, not array
-    })
-
-    return kwargs
+def mach_single_transmit_kwargs(
+    picmus_phantom_resolution_channel_data: ChannelData, picmus_phantom_resolution_scan: Scan, transmit_idx: int
+) -> dict:
+    """mach kwargs for UFF data."""
+    return create_single_transmit_beamforming_setup(
+        channel_data=picmus_phantom_resolution_channel_data,
+        scan=picmus_phantom_resolution_scan,
+        wave_index=transmit_idx,
+        xp=cp if HAS_CUPY else None,
+    )
 
 
 # ============================================================================
@@ -332,9 +300,6 @@ def test_mach_matches_vbeam_single_transmit(
     """Test mach vs vbeam on a single plane wave transmit to isolate core beamforming differences."""
     grid_shape = vbeam_setup_uff_single_transmit.scan.shape
 
-    print(f"\n=== Testing single transmit {transmit_idx} ===")
-    print(f"mach kwargs keys: {list(mach_single_transmit_kwargs.keys())}")
-
     # Run mach single-transmit beamforming using kernel.beamform directly
     gpu_result = kernel.beamform(**mach_single_transmit_kwargs, tukey_alpha=0.0)
     result = cp.asnumpy(gpu_result)
@@ -395,15 +360,13 @@ def test_mach_matches_vbeam_single_transmit(
 
 @pytest.mark.skipif(not HAS_CUPY, reason="CuPy not available")
 @pytest.mark.filterwarnings("ignore:array is not contiguous, rearranging will add latency:UserWarning")
-def test_mach_matches_vbeam(
-    picmus_phantom_resolution_beamform_kwargs, vbeam_setup_uff: SignalForPointSetup, output_dir
-):
+def test_mach_matches_vbeam(mach_beamform_kwargs, vbeam_setup_uff: SignalForPointSetup, output_dir):
     """Validate mach against vbeam output on a PICMUS UFF data file."""
     grid_shape = vbeam_setup_uff.scan.shape
 
-    print(picmus_phantom_resolution_beamform_kwargs.keys())
+    print(mach_beamform_kwargs.keys())
     # Match our custom vbeam apodization settings
-    gpu_result = experimental.beamform(**picmus_phantom_resolution_beamform_kwargs, tukey_alpha=0.0)
+    gpu_result = experimental.beamform(**mach_beamform_kwargs, tukey_alpha=0.0)
     result = cp.asnumpy(gpu_result)
     # Reshape to (x, z)
     result = result.reshape(grid_shape)
@@ -435,59 +398,6 @@ def test_mach_matches_vbeam(
     # Also show magnitude comparison for reference
     vbeam_magnitude = np.abs(vbeam_result)
     cuda_magnitude = np.abs(result)
-    print(f"Magnitude ratio (mach/vbeam) mean: {(cuda_magnitude / (vbeam_magnitude + 1e-10)).mean():.6f}")
-
-    # Check data types - this could be the issue!
-    print(f"vbeam result dtype: {vbeam_result.dtype}")
-    print(f"mach result dtype: {result.dtype}")
-    print(f"vbeam signal dtype: {vbeam_setup_uff.signal.dtype}")
-    print(f"mach signal dtype: {picmus_phantom_resolution_beamform_kwargs['channel_data'].dtype}")
-
-    # Check element positions - this could be the real issue!
-    print(f"vbeam receiver positions shape: {vbeam_setup_uff.receiver.position.shape}")
-    print(f"mach receiver positions shape: {picmus_phantom_resolution_beamform_kwargs['rx_coords_m'].shape}")
-    print(f"vbeam receiver positions (first 3): {vbeam_setup_uff.receiver.position[:3]}")
-    print(f"mach receiver positions (first 3): {picmus_phantom_resolution_beamform_kwargs['rx_coords_m'][:3]}")
-
-    # Check if positions match
-    vbeam_pos = np.asarray(vbeam_setup_uff.receiver.position)
-    mach_pos = picmus_phantom_resolution_beamform_kwargs["rx_coords_m"]
-    if hasattr(mach_pos, "get"):  # cupy array
-        mach_pos = mach_pos.get()
-    else:
-        mach_pos = np.asarray(mach_pos)
-    print(f"Receiver positions match: {np.allclose(vbeam_pos, mach_pos, atol=1e-6)}")
-    if not np.allclose(vbeam_pos, mach_pos, atol=1e-6):
-        print(f"Receiver position difference stats: max_diff={np.max(np.abs(vbeam_pos - mach_pos)):.2e}")
-
-    # Check scan positions too
-    vbeam_scan_pos = np.asarray(vbeam_setup_uff.scan.get_points())
-    mach_scan_pos = picmus_phantom_resolution_beamform_kwargs["scan_coords_m"]
-    if hasattr(mach_scan_pos, "get"):  # cupy array
-        mach_scan_pos = mach_scan_pos.get()
-    else:
-        mach_scan_pos = np.asarray(mach_scan_pos)
-    print(f"Scan positions match: {np.allclose(vbeam_scan_pos, mach_scan_pos, atol=1e-6)}")
-    if not np.allclose(vbeam_scan_pos, mach_scan_pos, atol=1e-6):
-        print(f"Scan position difference stats: max_diff={np.max(np.abs(vbeam_scan_pos - mach_scan_pos)):.2e}")
-
-    # Check transmit arrival times - this could be the issue!
-    print(f"mach tx_wave_arrivals_s shape: {picmus_phantom_resolution_beamform_kwargs['tx_wave_arrivals_s'].shape}")
-    mach_tx_arrivals = picmus_phantom_resolution_beamform_kwargs["tx_wave_arrivals_s"]
-    if hasattr(mach_tx_arrivals, "get"):
-        mach_tx_arrivals = mach_tx_arrivals.get()
-    else:
-        mach_tx_arrivals = np.asarray(mach_tx_arrivals)
-    print(f"mach tx arrivals (first transmit, first 3 points): {mach_tx_arrivals[0, :3]}")
-
-    # Let's also check the wave data from vbeam setup
-    print(f"vbeam wave_data.t0 (first 3): {vbeam_setup_uff.wave_data.t0[:3]}")
-    print(f"vbeam modulation_frequency: {vbeam_setup_uff.modulation_frequency}")
-    print(f"mach modulation_freq_hz: {picmus_phantom_resolution_beamform_kwargs['modulation_freq_hz']}")
-
-    # Let's also check apodization settings
-    print(f"vbeam f_number: {vbeam_setup_uff.apodization.receive.f_number}")
-    print(f"mach f_number: {picmus_phantom_resolution_beamform_kwargs['f_number']}")
 
     # Save debug output if requested
     if output_dir is not None:

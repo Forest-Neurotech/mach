@@ -131,7 +131,6 @@ def save_debug_figures(
         cbar3.set_label("Linear")
 
         # Relative difference in dB
-        # Calculate dB difference: 20*log10(our/ref) = 20*log10(our) - 20*log10(ref)
         diff_db = db(diff_img / max_value)
         im4 = axes[1, 1].imshow(diff_db.T, aspect="auto", origin="upper", cmap="hot", extent=extent, vmin=-140, vmax=0)
         axes[1, 1].set_title("Difference (dB, 0dB = max(ref, our))")
