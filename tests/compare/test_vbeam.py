@@ -390,8 +390,8 @@ def test_mach_matches_vbeam_single_transmit(
     np.testing.assert_allclose(
         actual=result,
         desired=vbeam_result,
-        atol=0.5,  # Slightly stricter than compound test
-        rtol=1 / 40,  # Slightly stricter than compound test
+        atol=0.5,
+        rtol=1 / 40,
         err_msg=f"mach single transmit {transmit_idx} results do not match vbeam within expected tolerances",
     )
 
@@ -405,7 +405,8 @@ def test_mach_matches_vbeam(
     grid_shape = vbeam_setup_uff.scan.shape
 
     print(picmus_phantom_resolution_beamform_kwargs.keys())
-    gpu_result = experimental.beamform(**picmus_phantom_resolution_beamform_kwargs)
+    # Match our custom vbeam apodization settings
+    gpu_result = experimental.beamform(**picmus_phantom_resolution_beamform_kwargs, tukey_alpha=0.0)
     result = cp.asnumpy(gpu_result)
     # Reshape to (x, z)
     result = result.reshape(grid_shape)

@@ -96,13 +96,6 @@ def beamform(
             tukey_alpha=tukey_alpha,
         )
 
-    # Apply empirical scaling to match vbeam's algorithmic approach
-    # vbeam has implicit apodization/normalization in its pipeline that mach doesn't have
-    # This compensates for the systematic ~13% difference (original mach/vbeam ratio = 0.868309)
-    # After this correction: ratio ≈ 1.000032 (essentially perfect global match)
-    VBEAM_COMPATIBILITY_FACTOR = 1.1517  # 1/0.868309
-    out = out * VBEAM_COMPATIBILITY_FACTOR
-
     # Move the data back to the dedicated output array
     if out_orig.__dlpack_device__()[0] != DLPackDevice.CUDA:
         out_orig[:] = out.get()
