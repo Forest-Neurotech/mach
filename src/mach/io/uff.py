@@ -160,17 +160,12 @@ def create_beamforming_setup(channel_data, scan, f_number: float = 1.7, xp=None)
     # Compute transmit arrivals for all transmits
     directions = extract_wave_directions(channel_data.sequence, xp or np)
     tx_wave_arrivals_s = compute_tx_wave_arrivals_s(directions, scan_coords_m, speed_of_sound, xp=xp)
-
-    # Extract timing information for all transmits
-    rx_delays = extract_sequence_delays(channel_data.sequence, xp)
+    # further delay each transmit by the delay of the wave
+    tx_wave_arrivals_s = tx_wave_arrivals_s + extract_sequence_delays(channel_data.sequence, xp)[:, None]
 
     # Account for initial_time offset (this is how vbeam handles it)
     # The initial_time represents when the first sample was acquired relative to t=0
-    initial_time = float(channel_data.initial_time)
-    if xp is not None and hasattr(xp, "asarray"):
-        rx_start_s = rx_delays - xp.asarray(initial_time)
-    else:
-        rx_start_s = rx_delays - initial_time
+    rx_start_s = float(channel_data.initial_time)
 
     return {
         "channel_data": signal,
