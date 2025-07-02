@@ -339,7 +339,7 @@ def test_mach_matches_vbeam_single_transmit(
     print(f"mach kwargs keys: {list(mach_single_transmit_kwargs.keys())}")
 
     # Run mach single-transmit beamforming using kernel.beamform directly
-    gpu_result = kernel.beamform(**mach_single_transmit_kwargs)
+    gpu_result = kernel.beamform(**mach_single_transmit_kwargs, tukey_alpha=0.0)
     result = cp.asnumpy(gpu_result)
     # Reshape to (x, z)
     result = result.reshape(grid_shape)
@@ -390,8 +390,8 @@ def test_mach_matches_vbeam_single_transmit(
     np.testing.assert_allclose(
         actual=result,
         desired=vbeam_result,
-        atol=0.5,
-        rtol=1 / 40,
+        atol=0.01,
+        rtol=1 / 100,
         err_msg=f"mach single transmit {transmit_idx} results do not match vbeam within expected tolerances",
     )
 
@@ -513,8 +513,8 @@ def test_mach_matches_vbeam(
     np.testing.assert_allclose(
         actual=result,
         desired=vbeam_result,
-        atol=1,
-        rtol=1 / 30,
+        atol=0.01,
+        rtol=1 / 100,
         err_msg="mach complex results do not match vbeam within expected tolerances (with scaling correction)",
     )
 
