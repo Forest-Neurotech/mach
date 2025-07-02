@@ -37,7 +37,7 @@ from vbeam.interpolation import FastInterpLinspace
 from vbeam.scan import LinearScan
 from vbeam.wavefront import PlaneWavefront, ReflectedWavefront
 
-from mach import experimental
+from mach import experimental, kernel
 from mach._vis import save_debug_figures
 from mach.io.uff import create_beamforming_setup
 
@@ -204,7 +204,6 @@ def transmit_idx(request):
 def vbeam_setup_uff_single_transmit(vbeam_setup_uff: SignalForPointSetup, transmit_idx: int) -> SignalForPointSetup:
     """Create a single-transmit vbeam setup from the full UFF setup."""
     import copy
-    import jax.numpy as jnp
 
     # Deep copy the setup to avoid modifying the original
     single_setup = copy.deepcopy(vbeam_setup_uff)
@@ -331,8 +330,6 @@ def test_mach_matches_vbeam_single_transmit(
     output_dir,
 ):
     """Test mach vs vbeam on a single plane wave transmit to isolate core beamforming differences."""
-    from mach import kernel
-
     grid_shape = vbeam_setup_uff_single_transmit.scan.shape
 
     print(f"\n=== Testing single transmit {transmit_idx} ===")

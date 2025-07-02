@@ -1,6 +1,5 @@
 """Visualization utilities for test-diagnostics."""
 
-from copy import copy
 from pathlib import Path
 from typing import Optional
 
