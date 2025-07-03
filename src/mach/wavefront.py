@@ -1,14 +1,11 @@
 """Convenience functions for determining the transmit-arrival distance of a wavefront."""
 
 import warnings
-from typing import TypeVar
 
 from array_api_compat import array_namespace
 from jaxtyping import Real
 
-from mach._array_api import ArrayAPIConformant
-
-Array = TypeVar("Array", bound=ArrayAPIConformant)
+from mach._array_api import Array
 
 
 def plane(

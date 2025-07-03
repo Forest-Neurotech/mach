@@ -1,16 +1,13 @@
 """Experimental. This API is not stable and may change."""
 
 from enum import Enum
-from typing import Optional, TypeVar, cast
+from typing import Optional, cast
 
 from array_api_compat import array_namespace
 from jaxtyping import Num, Real
 
 from mach import kernel
-from mach._array_api import ArrayAPIConformant
-
-# Type variable for array types
-Array = TypeVar("Array", bound=ArrayAPIConformant)
+from mach._array_api import Array
 
 
 class DLPackDevice(int, Enum):

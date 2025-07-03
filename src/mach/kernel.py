@@ -1,19 +1,16 @@
 """Python bindings and wrapper for the CUDA kernel."""
 
-from typing import Optional, TypeVar, cast
+from typing import Optional, cast
 
 from array_api_compat import array_namespace, is_writeable_array
 from jaxtyping import Num, Real
 
-from mach._array_api import ArrayAPIConformant
+from mach._array_api import Array
 from mach._check import ensure_contiguous, is_contiguous
 
 # Import from the nanobind module
 from ._cuda_impl import __nvcc_version__  # type: ignore[attr-defined]  # noqa: F401
 from ._cuda_impl import beamform as nb_beamform  # type: ignore[attr-defined]
-
-# Type variable for array types
-Array = TypeVar("Array", bound=ArrayAPIConformant)
 
 
 def beamform(  # noqa: C901

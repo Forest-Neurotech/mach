@@ -16,7 +16,7 @@ class DLPackDevice(int, Enum):
 
 
 @runtime_checkable
-class ArrayAPIConformant(Protocol):
+class Array(Protocol):
     """Protocol for arrays that conform to the Array API standard.
 
     This is a lightweight implementation that will eventually be replaced by

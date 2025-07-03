@@ -21,14 +21,12 @@ For convenience, we also provide spherical angle conversions following the physi
 
 import math
 import numbers
-from typing import TypeVar, Union
+from typing import Union
 
 from array_api_compat import array_namespace
 from jaxtyping import Real
 
-from mach._array_api import ArrayAPIConformant
-
-Array = TypeVar("Array", bound=ArrayAPIConformant)
+from mach._array_api import Array
 
 
 def ultrasound_angles_to_cartesian(

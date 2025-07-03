@@ -5,18 +5,16 @@ Usage: pass in a scan-object from:
 https://github.com/magnusdk/pyuff_ustb
 """
 
-from typing import Any, Optional, TypeVar
+from typing import Any, Optional
 
 import einops
 import numpy as np
 from array_api_compat import array_namespace
 from scipy.signal import hilbert
 
-from mach._array_api import ArrayAPIConformant
+from mach._array_api import Array
 from mach.geometry import ultrasound_angles_to_cartesian
 from mach.wavefront import plane
-
-Array = TypeVar("Array", bound=ArrayAPIConformant)
 
 
 def extract_wave_directions(sequence: list[Any], xp) -> list:

@@ -1,17 +1,13 @@
 """Array-checking utilities."""
 
 import warnings
-from typing import TypeVar
 
 from array_api_compat import array_namespace, is_cupy_array, is_numpy_array
 
-from mach._array_api import ArrayAPIConformant
-
-# Type variable for array types
-Array = TypeVar("Array", bound=ArrayAPIConformant)
+from mach._array_api import Array
 
 
-def is_contiguous(array: ArrayAPIConformant) -> bool:
+def is_contiguous(array: Array) -> bool:
     """Check if an array is contiguous.
 
     Returns:
