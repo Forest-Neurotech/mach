@@ -178,7 +178,7 @@ print("\n📊 Visualizing B-mode...")
 bmode_db = db_zero(beamformed_image)
 
 # Create high-quality visualization
-fig, ax = plt.subplots(figsize=(12, 8))
+fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
 
 # Set up coordinate system for proper display
 extent = [
