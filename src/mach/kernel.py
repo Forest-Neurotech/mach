@@ -50,8 +50,8 @@ def beamform(  # noqa: C901
     If your inputs are properly shaped/typed, or you are okay reading nanobind's
     slightly-confusing type-check error messages, you can use `nb_beamform` directly.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     channel_data : Array
         RF/IQ data with shape (n_rx, n_samples, n_frames)
         - For I/Q data: use complex64 dtype
@@ -103,15 +103,15 @@ def beamform(  # noqa: C901
         - 0.5: moderate apodization (default)
         - 1.0: maximum apodization (Hann window)
 
-    Returns:
-    --------
+    Returns
+    -------
     Array
         Beamformed data with shape (n_scan, nframes)
         Will be out if provided, otherwise a new array will be created
         Output dtype matches input dtype (complex64 or float32)
 
-    Notes:
-    ------
+    Notes
+    -----
     - All spatial coordinates should be in meters.
     - All time values should be in seconds.
     - All frequencies should be in Hz.
@@ -119,8 +119,8 @@ def beamform(  # noqa: C901
     - If the input arrays are not contiguous, the function automatically handles memory layout conversion.
     - Arrays can be on different devices (CPU/GPU); automatic copying will be performed with performance warnings.
 
-    Examples:
-    ---------
+    Examples
+    --------
     Basic plane wave beamforming:
 
     >>> import numpy as np

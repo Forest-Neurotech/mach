@@ -42,9 +42,16 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "myst_parser",
+    "numpydoc",
 ]
 
 autosummary_generate = True
+
+# Numpydoc configuration
+numpydoc_show_class_members = False
+numpydoc_xref_param_type = True
+numpydoc_xref_ignore = {"optional", "type_without_description", "BadException"}
+numpydoc_validation_checks = {"all", "GL08", "SA01", "EX01"}  # Suppress missing See Also and Examples sections
 
 # Source file suffixes
 source_suffix = [".rst", ".md"]
