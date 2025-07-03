@@ -47,6 +47,10 @@ extensions = [
 
 autosummary_generate = True
 
+# autodoc configuration
+maximum_signature_line_length = 68  # wrap long signatures with each parameter on separate lines
+# autodoc_typehints = "both"  # Use "both" to show type-hints in both signature and descriptions
+
 # Numpydoc configuration
 numpydoc_show_class_members = False
 numpydoc_xref_param_type = True

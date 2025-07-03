@@ -50,105 +50,99 @@ def beamform(  # noqa: C901
     If your inputs are properly shaped/typed, or you are okay reading nanobind's
     slightly-confusing type-check error messages, you can use `nb_beamform` directly.
 
-    Parameters
-    ----------
-    channel_data : Array
-        RF/IQ data with shape (n_rx, n_samples, n_frames)
-        - For I/Q data: use complex64 dtype
-        - For RF data: use float32 dtype
-        Note: this layout order improves memory-access patterns for the CUDA kernel.
-    rx_coords_m : Array
-        Receive element positions with shape (n_rx, 3) where each row is [x, y, z] in meters.
-        Each element represents the physical location of a transducer element on the probe.
-    scan_coords_m : Array
-        Scan grid point coordinates with shape (n_scan, 3) where each row is [x, y, z] in meters.
-        These are the spatial locations where beamformed values will be computed.
-        Note: n_scan = number of points_m in the imaging grid where you want beamformed output.
-    tx_wave_arrivals_s : Array
-        Transmit wave arrival times with shape (n_scan,) in seconds.
+    Args:
+        channel_data:
+            RF/IQ data with shape (n_rx, n_samples, n_frames).
+            For I/Q data: use complex64 dtype.
+            For RF data: use float32 dtype.
+            Note: this layout order improves memory-access patterns for the CUDA kernel.
+        rx_coords_m:
+            Receive element positions with shape (n_rx, 3) where each row is [x, y, z] in meters.
+            Each element represents the physical location of a transducer element on the probe.
+        scan_coords_m:
+            Scan grid point coordinates with shape (n_scan, 3) where each row is [x, y, z] in meters.
+            These are the spatial locations where beamformed values will be computed.
+            Note: n_scan = number of points_m in the imaging grid where you want beamformed output.
+        tx_wave_arrivals_s:
+            Transmit wave arrival times with shape (n_scan,) in seconds.
+            This represents the time when the transmitted acoustic wave arrives at each
+            scan grid point. For different transmit types:
+            - Plane wave: arrivals computed from wave direction and grid positions
+            - Focused/diverging wave: arrivals computed from focal point and grid positions
 
-        This represents the time when the transmitted acoustic wave arrives at each
-        scan grid point. For different transmit types:
-        - Plane wave: arrivals computed from wave direction and grid positions
-        - Focused/diverging wave: arrivals computed from focal point and grid positions
+            Use `mach.wavefront.plane()` or `mach.wavefront.spherical()`
+            to compute these values, then divide by sound speed to convert distance to time.
 
-        Use `mach.wavefront.plane()` or `mach.wavefront.spherical()`
-        to compute these values, then divide by sound speed to convert distance to time.
+            Example:
+                arrivals_distance = wavefront.plane(origin_m, scan_coords_m, direction)
+                tx_wave_arrivals_s = arrivals_distance / sound_speed_m_s
+        out:
+            Optional output array with shape (n_scan, nframes).
+            Must match input type: complex64 for I/Q, float32 for RF.
+        rx_start_s:
+            Receive start time offset in seconds. This corresponds to t0 in the literature
+            (biomecardio.com/publis/ultrasonics21.pdf) - the time when the 0th sample
+            was recorded relative to the transmit event. When rx_start_s=0, the wave
+            is assumed to pass through the coordinate origin_m at t=0.
+        sampling_freq_hz:
+            Sampling frequency in Hz.
+        f_number:
+            F-number for aperture calculations. Controls the size of the receive aperture
+            based on depth. Typical values range from 1.0 to 3.0.
+        sound_speed_m_s:
+            Speed of sound in m/s. Typical value for soft tissue is ~1540 m/s.
+        modulation_freq_hz:
+            Center frequency in Hz (only used for I/Q data; ignored for RF data).
+            For I/Q data: required parameter, set to 0 if no demodulation was used.
+            For RF data: automatically defaults to 0.0 if not provided.
+        tukey_alpha:
+            Tukey window alpha parameter for apodization. Range [0, 1]:
+            - 0.0: no apodization (rectangular window)
+            - 0.5: moderate apodization (default)
+            - 1.0: maximum apodization (Hann window)
 
-        Example:
-            arrivals_distance = wavefront.plane(origin_m, scan_coords_m, direction)
-            tx_wave_arrivals_s = arrivals_distance / sound_speed_m_s
-    out : Optional[Array], optional
-        Output array with shape (n_scan, nframes)
-        - Must match input type: complex64 for I/Q, float32 for RF
-    rx_start_s : float
-        Receive start time offset in seconds. This corresponds to t0 in the literature
-        (biomecardio.com/publis/ultrasonics21.pdf) - the time when the 0th sample
-        was recorded relative to the transmit event. When rx_start_s=0, the wave
-        is assumed to pass through the coordinate origin_m at t=0.
-    sampling_freq_hz : float
-        Sampling frequency in Hz
-    f_number : float
-        F-number for aperture calculations. Controls the size of the receive aperture
-        based on depth. Typical values range from 1.0 to 3.0.
-    sound_speed_m_s : float
-        Speed of sound in m/s. Typical value for soft tissue is ~1540 m/s.
-    modulation_freq_hz : float, optional (default=0.0)
-        Center frequency in Hz (only used for I/Q data; ignored for RF data)
-        - For I/Q data: required parameter, set to 0 if no demodulation was used
-        - For RF data: automatically defaults to 0.0 if not provided
-    tukey_alpha : float, optional (default=0.5)
-        Tukey window alpha parameter for apodization. Range [0, 1]:
-        - 0.0: no apodization (rectangular window)
-        - 0.5: moderate apodization (default)
-        - 1.0: maximum apodization (Hann window)
+    Returns:
+        Beamformed data with shape (n_scan, nframes).
+        Will be out if provided, otherwise a new array will be created.
+        Output dtype matches input dtype (complex64 or float32).
 
-    Returns
-    -------
-    Array
-        Beamformed data with shape (n_scan, nframes)
-        Will be out if provided, otherwise a new array will be created
-        Output dtype matches input dtype (complex64 or float32)
+    Notes:
+        - All spatial coordinates should be in meters.
+        - All time values should be in seconds.
+        - All frequencies should be in Hz.
+        - For optimal performance, use contiguous arrays with appropriate dtypes.
+        - If the input arrays are not contiguous, the function automatically handles memory layout conversion.
+        - Arrays can be on different devices (CPU/GPU); automatic copying will be performed with performance warnings.
 
-    Notes
-    -----
-    - All spatial coordinates should be in meters.
-    - All time values should be in seconds.
-    - All frequencies should be in Hz.
-    - For optimal performance, use contiguous arrays with appropriate dtypes.
-    - If the input arrays are not contiguous, the function automatically handles memory layout conversion.
-    - Arrays can be on different devices (CPU/GPU); automatic copying will be performed with performance warnings.
+    Examples:
+        Basic plane wave beamforming:
 
-    Examples
-    --------
-    Basic plane wave beamforming:
-
-    >>> import numpy as np
-    >>> from mach import beamform, wavefront
-    >>>
-    >>> # Set up geometry
-    >>> rx_positions = np.array([[0, 0, 0], [1e-3, 0, 0]])  # 2 elements, 1mm spacing
-    >>> scan_points = np.array([[0, 0, 10e-3], [0, 0, 20e-3]])  # 2 depths: 10mm, 20mm
-    >>>
-    >>> # Compute transmit arrivals for 0° plane wave
-    >>> arrivals_dist = wavefront.plane(
-    ...     origin_m=np.array([0, 0, 0]),
-    ...     points_m=scan_points,
-    ...     direction=np.array([0, 0, 1])  # +z direction
-    ... )
-    >>> tx_arrivals = arrivals_dist / 1540  # Convert to time (assuming 1540 m/s)
-    >>>
-    >>> # Beamform (assuming you have channel_data)
-    >>> result = beamform(
-    ...     channel_data=channel_data,  # shape: (2, n_samples, n_frames)
-    ...     rx_coords_m=rx_positions,
-    ...     scan_coords_m=scan_points,
-    ...     tx_wave_arrivals_s=tx_arrivals,
-    ...     rx_start_s=0.0,
-    ...     sampling_freq_hz=40e6,
-    ...     f_number=1.5,
-    ...     sound_speed_m_s=1540
-    ... )
+        >>> import numpy as np
+        >>> from mach import beamform, wavefront
+        >>>
+        >>> # Set up geometry
+        >>> rx_positions = np.array([[0, 0, 0], [1e-3, 0, 0]])  # 2 elements, 1mm spacing
+        >>> scan_points = np.array([[0, 0, 10e-3], [0, 0, 20e-3]])  # 2 depths: 10mm, 20mm
+        >>>
+        >>> # Compute transmit arrivals for 0° plane wave
+        >>> arrivals_dist = wavefront.plane(
+        ...     origin_m=np.array([0, 0, 0]),
+        ...     points_m=scan_points,
+        ...     direction=np.array([0, 0, 1])  # +z direction
+        ... )
+        >>> tx_arrivals = arrivals_dist / 1540  # Convert to time (assuming 1540 m/s)
+        >>>
+        >>> # Beamform (assuming you have channel_data)
+        >>> result = beamform(
+        ...     channel_data=channel_data,  # shape: (2, n_samples, n_frames)
+        ...     rx_coords_m=rx_positions,
+        ...     scan_coords_m=scan_points,
+        ...     tx_wave_arrivals_s=tx_arrivals,
+        ...     rx_start_s=0.0,
+        ...     sampling_freq_hz=40e6,
+        ...     f_number=1.5,
+        ...     sound_speed_m_s=1540
+        ... )
     """
 
     # Check input type and dtype before trying to convert dtypes

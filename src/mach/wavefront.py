@@ -20,25 +20,21 @@ def plane(
 
     Plane-wave transmit is described by its propagation direction and origin-position.
 
-    Parameters
-    ----------
-    origin_m : Array
-        The origin position of the plane-wave in meters.
-    points_m : Array
-        The position of the points to compute the transmit-arrival time for, in meters.
-    direction : Array
-        The direction of the plane-wave. Must be a unit vector.
-        We use direction vector instead of angles because it is less ambiguous.
+    Args:
+        origin_m:
+            The origin position of the plane-wave in meters.
+        points_m:
+            The position of the points to compute the transmit-arrival time for, in meters.
+        direction:
+            The direction of the plane-wave. Must be a unit vector.
+            We use direction vector instead of angles because it is less ambiguous.
 
-    Returns
-    -------
-    Array
+    Returns:
         The transmit-wavefront-arrival distance for each point in meters.
         To convert to time, divide by sound speed: distance_m / sound_speed_m_s
 
-    Notes
-    -----
-    Does not check for negative distances.
+    Notes:
+        Does not check for negative distances.
     """
     xp = array_namespace(origin_m, points_m, direction)
 
@@ -67,39 +63,35 @@ def spherical(
     Spherical waves propagate like a collapsing sphere focusing onto a point,
     or an expanding sphere diverging from a point.
 
-    Parameters
-    ----------
-    origin_m : Array
-        xyz-position of the transmitting element/sender in meters.
-        distance=0 at the origin
-    points_m : Array
-        xyz-positions of the points to compute the transmit-arrival time for, in meters.
-    focus_m : Array
-        xyz-position of the focal point where spherical waves converge, in meters.
-        sometimes called the source or apex.
-        for a focused wave, the focus is in front of the origin.
-        for a diverging wave, the focus is behind the origin.
-        Note: 'focus' refers to the convergence point, while 'origin' refers
-        to the physical transducer element that transmits the wave.
+    Args:
+        origin_m:
+            xyz-position of the transmitting element/sender in meters.
+            distance=0 at the origin.
+        points_m:
+            xyz-positions of the points to compute the transmit-arrival time for, in meters.
+        focus_m:
+            xyz-position of the focal point where spherical waves converge, in meters.
+            sometimes called the source or apex.
+            for a focused wave, the focus is in front of the origin.
+            for a diverging wave, the focus is behind the origin.
+            Note: 'focus' refers to the convergence point, while 'origin' refers
+            to the physical transducer element that transmits the wave.
 
-    Returns
-    -------
-    Array
+    Returns:
         The transmit-wavefront-arrival distance for each point in meters, calculated as the difference
         between the origin-to-focus distance and the focus-to-point distance.
         To convert to time, divide by sound speed: distance_m / sound_speed_m_s
 
-    Notes
-    -----
-    Similar to Equation 5 / Figure 2 from:
-        https://www.biomecardio.com/publis/ultrasonics21.pdf
-        So you think you can DAS? A viewpoint on delay-and-sum beamforming
-        Perrot, Polichetti, Varray, Garcia 2021
-    Modifications: assume L=0 (use wave-time through origin), and extend to 3D.
+    Notes:
+        Similar to Equation 5 / Figure 2 from:
+            https://www.biomecardio.com/publis/ultrasonics21.pdf
+            So you think you can DAS? A viewpoint on delay-and-sum beamforming
+            Perrot, Polichetti, Varray, Garcia 2021
+        Modifications: assume L=0 (use wave-time through origin), and extend to 3D.
 
-    The sign convention accounts for the direction of wave propagation.
-    For typical ultrasound imaging where z increases with depth, negative values
-    indicate the wavefront arrives before the reference time, positive values after.
+        The sign convention accounts for the direction of wave propagation.
+        For typical ultrasound imaging where z increases with depth, negative values
+        indicate the wavefront arrives before the reference time, positive values after.
     """
     xp = array_namespace(origin_m, points_m, focus_m)
 
