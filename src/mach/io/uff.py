@@ -110,8 +110,7 @@ def preprocess_signal(signal_data: Array, modulation_frequency: float, xp=None) 
 
 
 def extract_sequence_delays(sequence: list[Any], xp=None) -> Array:
-    """
-    Extract delay times from ultrasound sequence.
+    """Extract delay times from ultrasound sequence.
 
     Args:
         sequence: List of wave objects
@@ -129,8 +128,7 @@ def extract_sequence_delays(sequence: list[Any], xp=None) -> Array:
 
 
 def create_beamforming_setup(channel_data, scan, f_number: float = 1.7, xp=None) -> dict[str, Any]:
-    """
-    Create complete beamforming setup from channel data and scan parameters for all transmits.
+    """Create complete beamforming setup from channel data and scan parameters for all transmits.
 
     Args:
         channel_data: Channel data object containing signal
