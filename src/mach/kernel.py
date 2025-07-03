@@ -70,12 +70,8 @@ def beamform(  # noqa: C901
             - Plane wave: arrivals computed from wave direction and grid positions
             - Focused/diverging wave: arrivals computed from focal point and grid positions
 
-            Use `mach.wavefront.plane()` or `mach.wavefront.spherical()`
-            to compute these values, then divide by sound speed to convert distance to time.
-
-            Example:
-                arrivals_distance = wavefront.plane(origin_m, scan_coords_m, direction)
-                tx_wave_arrivals_s = arrivals_distance / sound_speed_m_s
+            Use `mach.wavefront.plane() / sound_speed_m_s` or
+            `mach.wavefront.spherical() / sound_speed_m_s` to compute these values.
         out:
             Optional output array with shape (n_scan, nframes).
             Must match input type: complex64 for I/Q, float32 for RF.

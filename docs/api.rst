@@ -7,6 +7,7 @@ Auto-generated API reference documentation.
 
 .. autosummary::
    :toctree: generated/
+   :template: autosummary/module.rst
    :recursive:
 
    kernel

@@ -42,26 +42,20 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "myst_parser",
-    "numpydoc",
 ]
 
 autosummary_generate = True
+autosummary_generate_overwrite = False
 
 # autodoc configuration
 maximum_signature_line_length = 68  # wrap long signatures with each parameter on separate lines
-# autodoc_typehints = "both"  # Use "both" to show type-hints in both signature and descriptions
-
-# Numpydoc configuration
-numpydoc_show_class_members = False
-numpydoc_xref_param_type = True
-numpydoc_xref_ignore = {"optional", "type_without_description", "BadException"}
-numpydoc_validation_checks = {"all", "GL08", "SA01", "EX01"}  # Suppress missing See Also and Examples sections
+autodoc_typehints = "signature"
 
 # Source file suffixes
 source_suffix = [".rst", ".md"]
 
 # Add any paths that contain templates here, relative to this directory.
-# templates_path = ["_templates"]
+templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
