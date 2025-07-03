@@ -185,7 +185,7 @@ def mach_beamform_kwargs(
     return create_beamforming_setup(
         channel_data=picmus_phantom_resolution_channel_data,
         scan=picmus_phantom_resolution_scan,
-        xp=cp if HAS_CUPY else None,
+        xp=cp if HAS_CUPY else np,
     )
 
 
@@ -215,7 +215,7 @@ def mach_single_transmit_kwargs(
         channel_data=picmus_phantom_resolution_channel_data,
         scan=picmus_phantom_resolution_scan,
         wave_index=transmit_idx,
-        xp=cp if HAS_CUPY else None,
+        xp=cp if HAS_CUPY else np,
     )
 
 
