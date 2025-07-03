@@ -334,8 +334,6 @@ def test_mach_matches_vbeam_single_transmit(
             reference_label="vbeam",
         )
 
-    # Compare with appropriate tolerances for single transmit
-    # Expect better agreement for single transmit than compound
     np.testing.assert_allclose(
         actual=result,
         desired=vbeam_result,
@@ -391,8 +389,6 @@ def test_mach_matches_vbeam(mach_beamform_kwargs, vbeam_setup_uff: SignalForPoin
         )
         print("Saved debug figures to", output_dir)
 
-        # After empirical scaling, compare complex values directly with strict tolerances
-    # This tests both magnitude and phase alignment between implementations
     np.testing.assert_allclose(
         actual=result,
         desired=vbeam_result,

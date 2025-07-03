@@ -202,12 +202,7 @@ def create_single_transmit_beamforming_setup(
 
     # Extract single transmit data
     single_setup = multi_setup.copy()
-    single_setup["channel_data"] = multi_setup["channel_data"][wave_index]  # Remove transmit dimension
-    single_setup["tx_wave_arrivals_s"] = multi_setup["tx_wave_arrivals_s"][wave_index]  # Remove transmit dimension
-    single_setup["rx_start_s"] = (
-        multi_setup["rx_start_s"][wave_index]
-        if hasattr(multi_setup["rx_start_s"], "__getitem__")
-        else multi_setup["rx_start_s"]
-    )
+    single_setup["channel_data"] = multi_setup["channel_data"][wave_index]
+    single_setup["tx_wave_arrivals_s"] = multi_setup["tx_wave_arrivals_s"][wave_index]
 
     return single_setup

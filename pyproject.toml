@@ -186,6 +186,7 @@ preview = true
 filterwarnings = [
     "error",  # make warnings errors
     "ignore:.*This will add latency due to CPU<->GPU memory transfers.*:UserWarning",
+    # vbeam warnings
     "ignore:point_position will be overwritten by the scan.:UserWarning",
     "ignore:Both point_position and scan are set. Scan will be used.:UserWarning",
 ]
