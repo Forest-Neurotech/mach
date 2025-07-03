@@ -79,7 +79,6 @@ def beamform(
     for transmit_idx in range(n_transmits):
         # Extract single-transmit data
         single_channel_data = channel_data[transmit_idx]
-        single_rx_start_s = rx_start_s[transmit_idx]
 
         # Call single-transmit beamform
         _ = kernel.beamform(
@@ -88,7 +87,7 @@ def beamform(
             scan_coords_m,
             tx_wave_arrivals_s[transmit_idx],
             out=out,
-            rx_start_s=single_rx_start_s,
+            rx_start_s=rx_start_s,
             sampling_freq_hz=sampling_freq_hz,
             f_number=f_number,
             sound_speed_m_s=sound_speed_m_s,

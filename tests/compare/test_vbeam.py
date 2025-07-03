@@ -37,9 +37,9 @@ from vbeam.interpolation import FastInterpLinspace
 from vbeam.scan import LinearScan
 from vbeam.wavefront import PlaneWavefront, ReflectedWavefront
 
-from mach import experimental
+from mach import experimental, kernel
 from mach._vis import save_debug_figures
-from mach.io.uff import create_beamforming_setup
+from mach.io.uff import create_beamforming_setup, create_single_transmit_beamforming_setup
 
 # ============================================================================
 # Fixtures
@@ -178,14 +178,44 @@ def vbeam_setup_uff(
 
 
 @pytest.fixture(scope="module")
-def picmus_phantom_resolution_beamform_kwargs(
+def mach_beamform_kwargs(
     picmus_phantom_resolution_channel_data: ChannelData, picmus_phantom_resolution_scan: Scan
 ) -> dict:
     """mach kwargs for UFF data."""
     return create_beamforming_setup(
         channel_data=picmus_phantom_resolution_channel_data,
         scan=picmus_phantom_resolution_scan,
-        xp=cp if HAS_CUPY else None,
+        xp=cp if HAS_CUPY else np,
+    )
+
+
+# ============================================================================
+# Single Transmit Test Fixtures
+# ============================================================================
+
+
+@pytest.fixture(scope="module", params=[0, 1, 10, 37, 74])
+def transmit_idx(request):
+    """Parametrized transmit index for single-transmit testing."""
+    return request.param
+
+
+@pytest.fixture(scope="module")
+def vbeam_setup_uff_single_transmit(vbeam_setup_uff: SignalForPointSetup, transmit_idx: int) -> SignalForPointSetup:
+    """Create a single-transmit vbeam setup from the full UFF setup."""
+    return vbeam_setup_uff.slice["transmits", transmit_idx]
+
+
+@pytest.fixture(scope="module")
+def mach_single_transmit_kwargs(
+    picmus_phantom_resolution_channel_data: ChannelData, picmus_phantom_resolution_scan: Scan, transmit_idx: int
+) -> dict:
+    """mach kwargs for UFF data."""
+    return create_single_transmit_beamforming_setup(
+        channel_data=picmus_phantom_resolution_channel_data,
+        scan=picmus_phantom_resolution_scan,
+        wave_index=transmit_idx,
+        xp=cp if HAS_CUPY else np,
     )
 
 
@@ -261,13 +291,66 @@ def test_vbeam_benchmark(benchmark, vbeam_pymust_setup, output_dir):
 
 @pytest.mark.skipif(not HAS_CUPY, reason="CuPy not available")
 @pytest.mark.filterwarnings("ignore:array is not contiguous, rearranging will add latency:UserWarning")
-def test_mach_matches_vbeam(
-    picmus_phantom_resolution_beamform_kwargs, vbeam_setup_uff: SignalForPointSetup, output_dir
+def test_mach_matches_vbeam_single_transmit(
+    mach_single_transmit_kwargs: dict,
+    vbeam_setup_uff_single_transmit: SignalForPointSetup,
+    transmit_idx: int,
+    output_dir,
 ):
+    """Test mach vs vbeam on a single plane wave transmit to isolate core beamforming differences."""
+    grid_shape = vbeam_setup_uff_single_transmit.scan.shape
+
+    # Run mach single-transmit beamforming using kernel.beamform directly
+    gpu_result = kernel.beamform(**mach_single_transmit_kwargs, tukey_alpha=0.0)
+    result = cp.asnumpy(gpu_result)
+    # Reshape to (x, z)
+    result = result.reshape(grid_shape)
+
+    # Verify basic properties
+    assert np.isfinite(result).all()
+
+    # Run vbeam single-transmit beamforming
+    beamformer = get_das_beamformer(
+        vbeam_setup_uff_single_transmit,
+        compensate_for_apodization_overlap=False,
+        log_compress=False,
+        scan_convert=False,
+    )
+    vbeam_result_jax = beamformer(**vbeam_setup_uff_single_transmit.data).block_until_ready()
+    vbeam_result = np.asarray(vbeam_result_jax)
+
+    # Save debug output if requested
+    if output_dir is not None:
+        output_dir = output_dir / "single_transmit_comparison" / f"transmit_{transmit_idx}"
+        save_debug_figures(
+            our_result=np.abs(result),
+            reference_result=np.abs(vbeam_result),
+            grid_shape=grid_shape,
+            x_axis=vbeam_setup_uff_single_transmit.scan.x,
+            z_axis=vbeam_setup_uff_single_transmit.scan.z,
+            output_dir=output_dir,
+            test_name=f"single_transmit_{transmit_idx}",
+            our_label="mach",
+            reference_label="vbeam",
+        )
+
+    np.testing.assert_allclose(
+        actual=result,
+        desired=vbeam_result,
+        atol=0.01,
+        rtol=1 / 100,
+        err_msg=f"mach single transmit {transmit_idx} results do not match vbeam within expected tolerances",
+    )
+
+
+@pytest.mark.skipif(not HAS_CUPY, reason="CuPy not available")
+@pytest.mark.filterwarnings("ignore:array is not contiguous, rearranging will add latency:UserWarning")
+def test_mach_matches_vbeam(mach_beamform_kwargs, vbeam_setup_uff: SignalForPointSetup, output_dir):
     """Validate mach against vbeam output on a PICMUS UFF data file."""
     grid_shape = vbeam_setup_uff.scan.shape
 
-    gpu_result = experimental.beamform(**picmus_phantom_resolution_beamform_kwargs)
+    # Match our custom vbeam apodization settings
+    gpu_result = experimental.beamform(**mach_beamform_kwargs, tukey_alpha=0.0)
     result = cp.asnumpy(gpu_result)
     # Reshape to (x, z)
     result = result.reshape(grid_shape)
@@ -286,7 +369,7 @@ def test_mach_matches_vbeam(
     vbeam_result_jax = beamformer(**vbeam_setup_uff.data).block_until_ready()
     vbeam_result = np.asarray(vbeam_result_jax)
 
-    # Compare magnitudes because we handle the phase slightly differently from vbeam
+    # Also show magnitude comparison for reference
     vbeam_magnitude = np.abs(vbeam_result)
     cuda_magnitude = np.abs(result)
 
@@ -306,14 +389,12 @@ def test_mach_matches_vbeam(
         )
         print("Saved debug figures to", output_dir)
 
-    # Validate mach against vbeam
-    # TODO: may want to further fine-tune these tolerances
     np.testing.assert_allclose(
-        actual=cuda_magnitude,
-        desired=vbeam_magnitude,
-        atol=10,
-        rtol=0.3,
-        err_msg="mach results do not match vbeam within expected tolerances",
+        actual=result,
+        desired=vbeam_result,
+        atol=0.01,
+        rtol=1 / 100,
+        err_msg="mach complex results do not match vbeam within expected tolerances (with scaling correction)",
     )
 
 

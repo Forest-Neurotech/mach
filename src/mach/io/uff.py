@@ -46,6 +46,7 @@ def compute_tx_wave_arrivals_s(
         scan_coords_m: Output positions for beamforming (N, 3) in meters
         speed_of_sound: Speed of sound in the medium
         origin: Wave origin point, defaults to [0, 0, 0]
+            Can also be parsed from ultrasound_angles_to_cartesian(channel_data.sequence[idx].origin)
         xp: Array namespace (optional, will be inferred from scan_coords_m)
 
     Returns:
@@ -159,9 +160,12 @@ def create_beamforming_setup(channel_data, scan, f_number: float = 1.7, xp=None)
     # Compute transmit arrivals for all transmits
     directions = extract_wave_directions(channel_data.sequence, xp or np)
     tx_wave_arrivals_s = compute_tx_wave_arrivals_s(directions, scan_coords_m, speed_of_sound, xp=xp)
+    # further delay each transmit by the delay of the wave
+    tx_wave_arrivals_s = tx_wave_arrivals_s + extract_sequence_delays(channel_data.sequence, xp)[:, None]
 
-    # Extract timing information for all transmits
-    rx_delays = extract_sequence_delays(channel_data.sequence, xp)
+    # Account for initial_time offset (this is how vbeam handles it)
+    # The initial_time represents when the first sample was acquired relative to t=0
+    rx_start_s = float(channel_data.initial_time)
 
     return {
         "channel_data": signal,
@@ -173,7 +177,7 @@ def create_beamforming_setup(channel_data, scan, f_number: float = 1.7, xp=None)
         "sampling_freq_hz": sampling_freq_hz,
         "sound_speed_m_s": speed_of_sound,
         "modulation_freq_hz": modulation_frequency,
-        "rx_start_s": rx_delays,
+        "rx_start_s": rx_start_s,
     }
 
 
@@ -198,8 +202,7 @@ def create_single_transmit_beamforming_setup(
 
     # Extract single transmit data
     single_setup = multi_setup.copy()
-    single_setup["channel_data"] = multi_setup["channel_data"][wave_index]  # Remove transmit dimension
-    single_setup["tx_wave_arrivals_s"] = multi_setup["tx_wave_arrivals_s"][wave_index]  # Remove transmit dimension
-    single_setup["rx_start_s"] = multi_setup["rx_start_s"][wave_index]
+    single_setup["channel_data"] = multi_setup["channel_data"][wave_index]
+    single_setup["tx_wave_arrivals_s"] = multi_setup["tx_wave_arrivals_s"][wave_index]
 
     return single_setup
