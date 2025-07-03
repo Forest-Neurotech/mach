@@ -319,18 +319,6 @@ def test_mach_matches_vbeam_single_transmit(
     vbeam_result_jax = beamformer(**vbeam_setup_uff_single_transmit.data).block_until_ready()
     vbeam_result = np.asarray(vbeam_result_jax)
 
-    # Debug output for single transmit
-    print(
-        f"Single transmit {transmit_idx} - Complex ratio (mach/vbeam) mean: {(result / (vbeam_result + 1e-10)).mean():.6f}"
-    )
-    print(
-        f"Single transmit {transmit_idx} - Magnitude ratio (mach/vbeam) mean: {(np.abs(result) / (np.abs(vbeam_result) + 1e-10)).mean():.6f}"
-    )
-
-    # Check data shapes and types
-    print(f"mach result shape: {result.shape}, dtype: {result.dtype}")
-    print(f"vbeam result shape: {vbeam_result.shape}, dtype: {vbeam_result.dtype}")
-
     # Save debug output if requested
     if output_dir is not None:
         output_dir = output_dir / "single_transmit_comparison" / f"transmit_{transmit_idx}"
@@ -345,7 +333,6 @@ def test_mach_matches_vbeam_single_transmit(
             our_label="mach",
             reference_label="vbeam",
         )
-        print(f"Saved single transmit {transmit_idx} debug figures to {output_dir}")
 
     # Compare with appropriate tolerances for single transmit
     # Expect better agreement for single transmit than compound
@@ -364,7 +351,6 @@ def test_mach_matches_vbeam(mach_beamform_kwargs, vbeam_setup_uff: SignalForPoin
     """Validate mach against vbeam output on a PICMUS UFF data file."""
     grid_shape = vbeam_setup_uff.scan.shape
 
-    print(mach_beamform_kwargs.keys())
     # Match our custom vbeam apodization settings
     gpu_result = experimental.beamform(**mach_beamform_kwargs, tukey_alpha=0.0)
     result = cp.asnumpy(gpu_result)
@@ -384,16 +370,6 @@ def test_mach_matches_vbeam(mach_beamform_kwargs, vbeam_setup_uff: SignalForPoin
     )
     vbeam_result_jax = beamformer(**vbeam_setup_uff.data).block_until_ready()
     vbeam_result = np.asarray(vbeam_result_jax)
-
-    # Compare complex values directly for more rigorous validation
-    # This will catch both magnitude and phase differences
-    print(
-        f"vbeam result range: real=[{vbeam_result.real.min():.6f}, {vbeam_result.real.max():.6f}], imag=[{vbeam_result.imag.min():.6f}, {vbeam_result.imag.max():.6f}]"
-    )
-    print(
-        f"mach result range: real=[{result.real.min():.6f}, {result.real.max():.6f}], imag=[{result.imag.min():.6f}, {result.imag.max():.6f}]"
-    )
-    print(f"Complex ratio (mach/vbeam) mean: {(result / (vbeam_result + 1e-10)).mean():.6f}")
 
     # Also show magnitude comparison for reference
     vbeam_magnitude = np.abs(vbeam_result)
