@@ -265,7 +265,7 @@ print("\n📊 Creating visualization...")
 power_doppler_db = db_zero(power_doppler_2d)
 
 # Plot along with axis labels
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(figsize=(8, 6), dpi=300)
 extent = [x.min() * MM_PER_METER, x.max() * MM_PER_METER, z.max() * MM_PER_METER, z.min() * MM_PER_METER]
 im = ax.imshow(
     power_doppler_db.T,
