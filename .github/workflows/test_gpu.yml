@@ -36,6 +36,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Cache downloaded data
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mach
+          # Key based on known file hashes from cached_download() calls
+          key: mach-data-cache-v1-${{ runner.os }}-c93af0781daeebf771e53a42a629d4f311407410166ef2f1d227e9d2a1b8c641-c349dc1d677c561434fd0e4a74142c4a0a44b7e6ae0a42d446c078a528ef58c1
+
       - name: Setup CUDA environment
         uses: ./.github/actions/setup-cuda-python-env
         with:
@@ -57,6 +64,13 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Cache downloaded data
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mach
+          # Key based on known file hashes from cached_download() calls
+          key: mach-data-cache-v1-${{ runner.os }}-c93af0781daeebf771e53a42a629d4f311407410166ef2f1d227e9d2a1b8c641-c349dc1d677c561434fd0e4a74142c4a0a44b7e6ae0a42d446c078a528ef58c1
 
       - name: Setup CUDA environment
         uses: ./.github/actions/setup-cuda-python-env
