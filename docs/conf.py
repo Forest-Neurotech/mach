@@ -45,12 +45,17 @@ extensions = [
 ]
 
 autosummary_generate = True
+autosummary_generate_overwrite = False
+
+# autodoc configuration
+maximum_signature_line_length = 68  # wrap long signatures with each parameter on separate lines
+autodoc_typehints = "signature"
 
 # Source file suffixes
 source_suffix = [".rst", ".md"]
 
 # Add any paths that contain templates here, relative to this directory.
-# templates_path = ["_templates"]
+templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.

@@ -103,6 +103,7 @@ docs = [
     "ipykernel>=6.10",
     "matplotlib>=3.9.4",
     "myst-parser>=3.0.1",
+    "numpydoc>=1.5.0",
     "numpy>=2.0.2",
     "sphinx>=7.2.6",
     "sphinx-book-theme>=1.1.3",

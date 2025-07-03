@@ -6,7 +6,7 @@ from typing import Optional
 import pytest
 from pyuff_ustb import ChannelData, Scan
 
-from mach._array_api import ArrayAPIConformant
+from mach._array_api import Array
 from mach._vis import db_zero, plot_slice
 from mach.experimental import beamform
 from mach.io.uff import create_beamforming_setup, create_single_transmit_beamforming_setup
@@ -29,7 +29,7 @@ def test_picmus_phantom_resolution(
 
     result = beamform(**beamform_kwargs)
 
-    assert isinstance(result, ArrayAPIConformant)
+    assert isinstance(result, Array)
 
     if output_dir is not None:
         single_slice = result.reshape(
@@ -66,7 +66,7 @@ def test_picmus_phantom_resolution_single_transmit(
 
     result = single_beamform(**beamform_kwargs)
 
-    assert isinstance(result, ArrayAPIConformant)
+    assert isinstance(result, Array)
 
     if output_dir is not None:
         single_slice = result[..., 0].reshape(  # Single frame result

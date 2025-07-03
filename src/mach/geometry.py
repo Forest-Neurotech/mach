@@ -21,14 +21,12 @@ For convenience, we also provide spherical angle conversions following the physi
 
 import math
 import numbers
-from typing import TypeVar, Union
+from typing import Union
 
 from array_api_compat import array_namespace
 from jaxtyping import Real
 
-from mach._array_api import ArrayAPIConformant
-
-Array = TypeVar("Array", bound=ArrayAPIConformant)
+from mach._array_api import Array
 
 
 def ultrasound_angles_to_cartesian(
@@ -53,14 +51,17 @@ def ultrasound_angles_to_cartesian(
         z = r * cos(elevation) * cos(azimuth)
 
     Args:
-        azimuth_rad: Azimuth angle in radians - angle in xz-plane (around y-axis), applied first
-        elevation_rad: Elevation angle in radians - angle from xz-plane (after azimuth rotation)
-        radius_m: Radius/distance from origin in meters (defaults to 1 for unit vectors)
+        azimuth_rad:
+            Azimuth angle in radians - angle in xz-plane (around y-axis), applied first.
+        elevation_rad:
+            Elevation angle in radians - angle from xz-plane (after azimuth rotation).
+        radius_m:
+            Radius/distance from origin in meters (defaults to 1 for unit vectors).
 
     Returns:
-        Cartesian coordinates in xyz-order:
-        - For array inputs: returns array with shape (*coords, 3)
-        - For scalar inputs: returns tuple[float, float, float]
+        Cartesian coordinates in xyz-order.
+        For array inputs: returns array with shape (*coords, 3).
+        For scalar inputs: returns tuple[float, float, float].
 
     Examples:
         >>> # Convert 15° azimuth to Cartesian
@@ -96,19 +97,22 @@ def spherical_to_cartesian(
     Uses the physics convention as defined in ISO 80000-2:2019.
     https://en.wikipedia.org/wiki/Spherical_coordinate_system
 
-    Arguments:
-        theta_rad: Polar angle in radians - angle between the radial line and a polar axis
-        phi_rad: Azimuthal angle in radians - angle of rotation of the radial line around
-            the polar axis
-        radius_m: Radial distance from the origin in meters (defaults to 1 for unit vectors)
+    Args:
+        theta_rad:
+            Polar angle in radians - angle between the radial line and a polar axis.
+        phi_rad:
+            Azimuthal angle in radians - angle of rotation of the radial line around
+            the polar axis.
+        radius_m:
+            Radial distance from the origin in meters (defaults to 1 for unit vectors).
 
     Returns:
-        Wave-direction vectors in xyz-order, with norm=radius_m
-        - For scalar inputs: returns tuple[float, float, float]
-        - For array inputs: returns array with shape (*angles, 3)
+        Wave-direction vectors in xyz-order, with norm=radius_m.
+        For scalar inputs: returns tuple[float, float, float].
+        For array inputs: returns array with shape (*angles, 3).
 
     Raises:
-        ValueError: If any angle has magnitude >= π/2, suggesting possible unit confusion
+        ValueError: If any angle has magnitude >= π/2, suggesting possible unit confusion.
 
     Examples:
         >>> # Convert physics spherical coordinates

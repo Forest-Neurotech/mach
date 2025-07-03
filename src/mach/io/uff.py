@@ -5,18 +5,16 @@ Usage: pass in a scan-object from:
 https://github.com/magnusdk/pyuff_ustb
 """
 
-from typing import Any, Optional, TypeVar
+from typing import Any, Optional
 
 import einops
 import numpy as np
 from array_api_compat import array_namespace
 from scipy.signal import hilbert
 
-from mach._array_api import ArrayAPIConformant
+from mach._array_api import Array
 from mach.geometry import ultrasound_angles_to_cartesian
 from mach.wavefront import plane
-
-Array = TypeVar("Array", bound=ArrayAPIConformant)
 
 
 def extract_wave_directions(sequence: list[Any], xp) -> list:
@@ -110,8 +108,7 @@ def preprocess_signal(signal_data: Array, modulation_frequency: float, xp=None) 
 
 
 def extract_sequence_delays(sequence: list[Any], xp=None) -> Array:
-    """
-    Extract delay times from ultrasound sequence.
+    """Extract delay times from ultrasound sequence.
 
     Args:
         sequence: List of wave objects
@@ -129,8 +126,7 @@ def extract_sequence_delays(sequence: list[Any], xp=None) -> Array:
 
 
 def create_beamforming_setup(channel_data, scan, f_number: float = 1.7, xp=None) -> dict[str, Any]:
-    """
-    Create complete beamforming setup from channel data and scan parameters for all transmits.
+    """Create complete beamforming setup from channel data and scan parameters for all transmits.
 
     Args:
         channel_data: Channel data object containing signal

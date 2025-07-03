@@ -1,14 +1,11 @@
 """Convenience functions for determining the transmit-arrival distance of a wavefront."""
 
 import warnings
-from typing import TypeVar
 
 from array_api_compat import array_namespace
 from jaxtyping import Real
 
-from mach._array_api import ArrayAPIConformant
-
-Array = TypeVar("Array", bound=ArrayAPIConformant)
+from mach._array_api import Array
 
 
 def plane(
@@ -21,16 +18,20 @@ def plane(
     Plane-wave transmit is described by its propagation direction and origin-position.
 
     Args:
-        origin_m: The origin position of the plane-wave in meters.
-        points_m: The position of the points to compute the transmit-arrival time for, in meters.
-        direction: The direction of the plane-wave. Must be a unit vector.
+        origin_m:
+            The origin position of the plane-wave in meters.
+        points_m:
+            The position of the points to compute the transmit-arrival time for, in meters.
+        direction:
+            The direction of the plane-wave. Must be a unit vector.
             We use direction vector instead of angles because it is less ambiguous.
 
     Returns:
         The transmit-wavefront-arrival distance for each point in meters.
         To convert to time, divide by sound speed: distance_m / sound_speed_m_s
 
-    Note: does not check for negative distances.
+    Notes:
+        Does not check for negative distances.
     """
     xp = array_namespace(origin_m, points_m, direction)
 
@@ -60,10 +61,13 @@ def spherical(
     or an expanding sphere diverging from a point.
 
     Args:
-        origin_m: xyz-position of the transmitting element/sender in meters.
-            distance=0 at the origin
-        points_m: xyz-positions of the points to compute the transmit-arrival time for, in meters.
-        focus_m: xyz-position of the focal point where spherical waves converge, in meters.
+        origin_m:
+            xyz-position of the transmitting element/sender in meters.
+            distance=0 at the origin.
+        points_m:
+            xyz-positions of the points to compute the transmit-arrival time for, in meters.
+        focus_m:
+            xyz-position of the focal point where spherical waves converge, in meters.
             sometimes called the source or apex.
             for a focused wave, the focus is in front of the origin.
             for a diverging wave, the focus is behind the origin.
@@ -75,7 +79,7 @@ def spherical(
         between the origin-to-focus distance and the focus-to-point distance.
         To convert to time, divide by sound speed: distance_m / sound_speed_m_s
 
-    Note:
+    Notes:
         Similar to Equation 5 / Figure 2 from:
             https://www.biomecardio.com/publis/ultrasonics21.pdf
             So you think you can DAS? A viewpoint on delay-and-sum beamforming
