@@ -15,6 +15,12 @@ mach
    examples/index
 
 .. toctree::
+   :maxdepth: 1
+   :caption: Performance:
+
+   benchmarks
+
+.. toctree::
    :maxdepth: 2
    :caption: API Reference:
 
