@@ -77,9 +77,12 @@ mach optimize GPU memory access patterns to improve performance. For those inter
 - Delay and apodization tables cached in shared memory
 - Reused across all frames for each voxel
 
-### Profiling with Nsight Compute
+### Memory Bandwidth and Compute Utilization
 
-*[Figure placeholder: Nsight compute metrics screenshot]*
+*[Stub: Detailed analysis of memory bandwidth utilization and compute efficiency using Nsight Compute profiling results]*
+
+*[Analysis of achieved bandwidth and compute utilization to be added]*
+
 
 ## Scaling Performance
 
@@ -108,13 +111,6 @@ The first term `n_voxels × n_frames` corresponds to output size and dominantes 
 *[Figure placeholder: Performance scaling with number of receive elements]*
 
 *[Figure placeholder: Performance scaling with ensemble size (frames)]*
-
-### Memory Bandwidth and Compute Utilization
-
-*[Stub: Detailed analysis of memory bandwidth utilization and compute efficiency using Nsight Compute profiling results]*
-
-
-*[Analysis of achieved bandwidth and compute utilization to be added]*
 
 ## Large-Scale Dataset Performance
 
