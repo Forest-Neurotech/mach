@@ -50,8 +50,8 @@ def base_scaling_data(pymust_iq_data, pymust_element_positions, pymust_params):
     single_frame_data = pymust_iq_data[:, :, :1].copy()
 
     # Base grid with 1e-4 resolution (roughly 100 μm spacing)
-    n_x = 51  # Smaller baseline for faster scaling tests
-    n_z = 51
+    n_x = 251  # Same as original PyMUST tests
+    n_z = 251
 
     x_range = np.linspace(-1.25e-2, 1.25e-2, num=n_x, endpoint=True)
     y_range = np.array([0.0])
@@ -125,9 +125,7 @@ def test_scaling_voxels(benchmark, base_scaling_data, grid_resolution):
     n_x = int(x_extent / grid_resolution) + 1
     n_z = int(z_extent / grid_resolution) + 1
 
-    # Limit maximum grid size to prevent excessive memory usage
-    n_x = min(n_x, 500)
-    n_z = min(n_z, 500)
+    # No grid size limit - let it scale to test performance properly
 
     # Create new grid
     x_range = np.linspace(data["x_range"][0], data["x_range"][-1], num=n_x, endpoint=True)
@@ -179,8 +177,7 @@ def test_scaling_voxels(benchmark, base_scaling_data, grid_resolution):
         )
         return result
 
-        # Benchmark the function
-
+    # Benchmark the function
     benchmark(mach_voxel_scaling)
 
     # Verify basic properties (use the output array, not benchmark return value)
@@ -231,8 +228,7 @@ def test_scaling_receive_elements(benchmark, base_scaling_data, element_multipli
         start_idx = i * n_original_elements
         end_idx = (i + 1) * n_original_elements
         scaled_positions[start_idx:end_idx] = original_positions.copy()
-        # Add small offset to avoid identical positions (shift in y-direction)
-        scaled_positions[start_idx:end_idx, 1] += i * 1e-6  # 1 μm offset
+        # Keep identical positions - no offset needed
 
     # Transfer to GPU
     iq_data_gpu = cp.asarray(scaled_iq)
@@ -262,8 +258,7 @@ def test_scaling_receive_elements(benchmark, base_scaling_data, element_multipli
         )
         return result
 
-        # Benchmark the function
-
+    # Benchmark the function
     benchmark(mach_element_scaling)
 
     # Verify basic properties (use the output array, not benchmark return value)
@@ -330,8 +325,7 @@ def test_scaling_ensemble_size(benchmark, base_scaling_data, frame_multiplier):
         )
         return result
 
-        # Benchmark the function
-
+    # Benchmark the function
     benchmark(mach_frame_scaling)
 
     # Verify basic properties (use the output array, not benchmark return value)
