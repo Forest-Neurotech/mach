@@ -11,13 +11,13 @@
 
 ### What We Measure
 
-**Kernel Performance Only**: All benchmarks measure only the core beamforming kernel execution time. We explicitly **exclude**:
-- CPU↔GPU memory transfers (depends on PCIe bandwidth, motherboard, etc.)
-- Data format conversions and reshaping (varies by scanner or file format)
-- Pre-processing steps (bit-unpacking, filtering, demodulation; varies by sequence)
-- Post-processing steps (clutter filtering, varies by imaging modality)
+**Kernel Performance Only**: All benchmarks measure only the core delay-and-sum beamforming kernel execution time. We explicitly **exclude**:
+- CPU↔GPU memory transfers (depends on PCIe bandwidth, motherboard, etc., and pre-/post-processing steps may keep data on the GPU)
+- JIT compilation (amortized over multiple function-calls)
+- Data format reshaping (varies by scanner or file format)
+- Pre-processing and post-processing steps (bit-unpacking, demodulation, clutter filtering, etc.; varies by ultrasound sequence)
 
-The benchmark focuses on delay-and-sum performance rather than system-specific overheads.
+The benchmark focuses on the most compute-/memory-bandwidth-intensive part of beamforming rather than system-specific overheads.
 
 ### Benchmark Dataset
 
@@ -33,11 +33,25 @@ This represents a realistic ultrafast imaging workload, although it is a small m
 
 ![Benchmark Results](assets/benchmark-doppler_disk.svg)
 
-| Implementation | Median Runtime | Points/Second | Speed-up over |
+| Implementation | Median Runtime | Points/Second | "Mach factor" |
 |---------------|----------------|---------------|----------------|
-| **mach (GPU)** | **0.3 ms** | **8.56 × 10¹¹** | **1.0× (baseline)** |
-| vbeam (JAX/GPU) | 2.8 ms | 9.04 × 10¹⁰ | 9.3× |
-| PyMUST (CPU) | 298.4 ms | 8.64 × 10⁸ | 995× |
+| **mach (GPU)** | **0.3 ms** | **8.56 × 10¹¹** | **5.0×** |
+| Speed-of-Sound (35mm) | 1.5 ms |  | 1× |
+| vbeam (JAX/GPU) | 2.8 ms | 9.04 × 10¹⁰ | 0.5× |
+| PyMUST (CPU) | 298.4 ms | 8.64 × 10⁸ | 0.005× |
+
+### What does "beamforming at the speed of sound" even mean?
+
+The **speed-of-sound** ("Mach 1"), represents the theoretical minimum time required for ultrasound waves to travel to the deepest imaging point and back, multiplied by the number of frames in the dataset.
+This is specific to each imaging scenario. For our benchmark with PyMUST's [rotating-disk Doppler dataset](https://github.com/creatis-ULTIM/PyMUST/blob/170ba68/examples/rotatingDisk_real.ipynb):
+
+- **Maximum imaging depth**: 35 mm
+- **Speed of sound in rotating disk**: 1,480 m/s
+- **Round-trip time**: 2 × 0.035 m ÷ 1,480 m/s = 47 μs per frame
+- **Total for 32 frames**: 47.3 μs × 32 = **1.5 ms**
+
+mach's processing time depends on various factors (see [Computational Complexity](#computational-complexity)),
+so the "Mach 5" description is specific to this benchmark.
 
 ## Benchmark Reproduction
 
