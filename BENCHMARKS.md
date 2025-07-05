@@ -109,14 +109,40 @@ O(n_voxels × n_elements × n_frames)
 
 For the PyMUST dataset: `63,001 voxels × 128 elements × 32 frames ≈ 2.6 × 10⁸` points
 
-### VRAM Complexity
+### GPU Memory (VRAM) Usage
 
-GPU Memory usage scales approximately as:
+mach allocates GPU memory only for input arguments and the output result; no intermediate arrays are created during computation, simplifying memory management.
+
+Total GPU memory usage scales as:
 ```
 O(n_voxels × n_frames + n_elements × n_samples × n_frames)
 ```
 
-The first term `n_voxels × n_frames` corresponds to output size and dominantes for large imaging grids, while the second term `n_elements × n_samples × n_frames` corresponds to the input data and dominates for high-channel-count systems.
+Where:
+- **First term** (`n_voxels × n_frames`): Output array size—dominates for large imaging grids
+- **Second term** (`n_elements × n_samples × n_frames`): Input data size—dominates for high-channel-count systems
+
+#### Memory Usage Example
+
+Here is an example functional ultrasound imaging (fUSI) workload:
+- **Imaging grid**: 100×100×100 voxels (1M points)
+- **Temporal frames**: 200 frames
+- **Matrix probe**: 1024 elements
+- **Samples per channel**: 100
+- **Data type**: `complex64` (8 bytes per sample)
+
+**Memory breakdown:**
+```
+channel_data:       (1024, 100, 200) → 164 MB
+rx_coords_m:        (1024, 3)        → 12 KB
+scan_coords_m:      (1M, 3)          → 12 MB
+tx_wave_arrivals_s: (1M,)            → 4 MB
+out:                (1M, 200)        → 1.6 GB
+                                    ─────────
+Total GPU memory:                    ~1.78 GB
+```
+
+In this example, the output array (`out`) represents 90% of memory usage, demonstrating how large imaging grids dominate memory requirements for volumetric datasets.
 
 ### Performance Scaling with Dataset Size
 
