@@ -9,7 +9,7 @@ An ultrafast CUDA-accelerated ultrasound beamformer for Python users. Developed 
 
 ![Benchmark Results](assets/benchmark-doppler_disk.svg)
 
-_Beamforming PyMUST's [rotating-disk Doppler dataset](https://github.com/creatis-ULTIM/PyMUST/blob/170ba68/examples/rotatingDisk_real.ipynb) at 0.86 trillion points per second (**5**x the speed of sound)._
+_[Benchmark](https://github.com/Forest-Neurotech/mach/blob/main/BENCHMARKS.md): Beamforming PyMUST's [rotating-disk Doppler dataset](https://github.com/creatis-ULTIM/PyMUST/blob/170ba68/examples/rotatingDisk_real.ipynb) at 0.86 trillion points per second ([**5**x the speed of sound](https://github.com/Forest-Neurotech/mach/blob/main/BENCHMARKS.md))._
 
 > **⚠️ Alpha Release**
 >
