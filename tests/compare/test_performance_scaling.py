@@ -97,7 +97,7 @@ def base_scaling_data(pymust_iq_data, pymust_element_positions, pymust_params):
 @pytest.mark.benchmark(
     group="scaling_voxels",
     min_time=0.1,
-    max_time=10.0,
+    max_time=1.0,
     min_rounds=3,
     warmup=True,
     warmup_iterations=1,
@@ -189,7 +189,7 @@ def test_scaling_voxels(benchmark, base_scaling_data, grid_resolution):
 @pytest.mark.benchmark(
     group="scaling_elements",
     min_time=0.1,
-    max_time=10.0,
+    max_time=1.0,
     min_rounds=3,
     warmup=True,
     warmup_iterations=1,
@@ -270,7 +270,7 @@ def test_scaling_receive_elements(benchmark, base_scaling_data, element_multipli
 @pytest.mark.benchmark(
     group="scaling_frames",
     min_time=0.1,
-    max_time=10.0,
+    max_time=1.0,
     min_rounds=3,
     warmup=True,
     warmup_iterations=1,
