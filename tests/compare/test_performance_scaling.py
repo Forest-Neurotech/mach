@@ -47,7 +47,7 @@ def base_scaling_data(pymust_iq_data, pymust_element_positions, pymust_params):
     """Base data for scaling tests - single frame, baseline resolution."""
 
     # Use single frame for baseline
-    single_frame_data = pymust_iq_data[:, :, :1].copy()
+    # single_frame_data = pymust_iq_data[:, :, :1].copy()
 
     # Base grid with 1e-4 resolution (roughly 100 μm spacing)
     n_x = 251  # Same as original PyMUST tests
@@ -77,7 +77,7 @@ def base_scaling_data(pymust_iq_data, pymust_element_positions, pymust_params):
 
     # Reorder IQ data for mach format
     iq_data_reordered = np.ascontiguousarray(
-        rearrange(single_frame_data, "n_samples n_elements n_frames -> n_elements n_samples n_frames"),
+        rearrange(pymust_iq_data, "n_samples n_elements n_frames -> n_elements n_samples n_frames"),
         dtype=np.complex64,
     )
 
@@ -279,12 +279,12 @@ def test_scaling_receive_elements(benchmark, base_scaling_data, element_multipli
 @pytest.mark.parametrize(
     "frame_multiplier",
     [
+        pytest.param(1 / 32, id="1/32x_frames (1 frame)"),
+        pytest.param(1 / 8, id="1/8x_frames (4 frames)"),
         pytest.param(1, id="1x_frames"),
-        pytest.param(5, id="5x_frames"),
-        pytest.param(10, id="10x_frames"),
-        pytest.param(20, id="20x_frames"),
-        pytest.param(50, id="50x_frames"),
-        pytest.param(100, id="100x_frames"),
+        pytest.param(4, id="4x_frames"),
+        pytest.param(16, id="16x_frames"),
+        pytest.param(64, id="64x_frames"),
     ],
 )
 def test_scaling_ensemble_size(benchmark, base_scaling_data, frame_multiplier):
@@ -295,7 +295,11 @@ def test_scaling_ensemble_size(benchmark, base_scaling_data, frame_multiplier):
 
     # Duplicate the frame data
     original_iq = data["iq_data"]
-    scaled_iq = np.tile(original_iq, (1, 1, frame_multiplier))
+    if frame_multiplier < 1:
+        n_frames = round(original_iq.shape[2] * frame_multiplier)
+        scaled_iq = original_iq[:, :, :n_frames]
+    else:
+        scaled_iq = np.tile(original_iq, (1, 1, frame_multiplier))
 
     # Transfer to GPU
     iq_data_gpu = cp.asarray(scaled_iq)
