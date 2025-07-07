@@ -83,6 +83,35 @@ struct SectionTimer {
 #endif
 
 /**
+ * Calculate the number of voxels to process per block based on frame count.
+ * For small frame counts (< 4), we increase voxels_per_block to maintain at least MIN_THREADS_PER_BLOCK threads.
+ * For larger frame counts, we use DEFAULT_NUM_VOXELS_PER_BLOCK for optimal performance.
+ * 
+ * @param frames_per_block Number of frames to process in this block
+ * @return Number of voxels to process per block
+ */
+static inline __host__ __device__ int calculate_voxels_per_block(int frames_per_block) {
+    // For small frame counts, increase voxels to maintain minimum thread count
+    // For larger frame counts, use default voxels for optimal performance
+    DEBUG_ASSERT(frames_per_block > 0);
+    return max((MIN_THREADS_PER_BLOCK + frames_per_block - 1) / frames_per_block, DEFAULT_NUM_VOXELS_PER_BLOCK);
+}
+
+/**
+ * Calculate the number of receive elements to process per batch based on voxels per block.
+ * This maintains constant shared memory usage by scaling inversely with voxels_per_block.
+ * 
+ * @param voxels_per_block Number of voxels being processed in this block
+ * @return Number of receive elements to process per batch
+ */
+static inline __host__ __device__ int calculate_receive_elements_batch_size(int voxels_per_block) {
+    // Scale receive elements inversely with voxels to maintain constant shared memory usage
+    DEBUG_ASSERT(voxels_per_block > 0);
+    return VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE / voxels_per_block;
+}
+
+
+/**
  * @brief Tukey window apodization function
  *
  * @param r_norm: float, the normalized distance from the center of the aperture
@@ -287,6 +316,7 @@ __device__ static inline float2 calculateTxRxDelayAndApodization(
  * @param tukey_alpha Alpha parameter for Tukey window apodization
  * @param rx_start_s acquisition start time, i.e.  offset (seconds, corresponds to t0 in biomecardio.com/publis/ultrasonics21.pdf)
  * @param n_output_voxels Number of output voxels
+ * @param receive_elements_batch_size Number of receive elements to process per batch
  */
 template<typename DataType, bool UseApodization>
 __global__ void beamformKernel(
@@ -304,7 +334,8 @@ __global__ void beamformKernel(
     __grid_constant__ const float f_number,
     __grid_constant__ const float tukey_alpha,
     __grid_constant__ const float rx_start_s,
-    __grid_constant__ const uint64_t n_output_voxels
+    __grid_constant__ const uint64_t n_output_voxels,
+    __grid_constant__ const uint32_t receive_elements_batch_size
 ) {
     // Ensure DataType is one of the supported types for ultrasound beamforming
     static_assert(std::is_same_v<DataType, float> || std::is_same_v<DataType, float2>,
@@ -320,8 +351,6 @@ __global__ void beamformKernel(
     const unsigned int voxel_tid = threadIdx.y;  // Voxel dimension (within block)
     const unsigned int num_frame_threads = blockDim.x;
     const unsigned int num_voxels_per_block = blockDim.y;
-    // We scale the receive-elements processed with the number of voxels per block to keep the shared memory usage constant
-    const unsigned int receive_elements_batch_size = VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE / num_voxels_per_block;
     const uint32_t receive_element_block_start_idx = blockIdx.z * receive_elements_batch_size;
     const unsigned int receive_elements_in_batch = min(receive_elements_batch_size, n_receive_elements - receive_element_block_start_idx);
     // CUDA: blockIdx.x <= 2**16 - 1, blockIdx.y <= 2**16 - 1, gridDim.x <= 2**16 - 1
@@ -531,16 +560,13 @@ void _beamform_impl(
     bool apod_flag = tukey_alpha > 0.0f;
     const float inv_sound_speed_m_s = 1.0f / sound_speed_m_s;
 
-    // Configure thread-blocks
-    // x dimension: frames, y dimension: voxels
-    // Use at least 32 threads per block even when n_frames == 1
-    // So we adjust voxels_per_block based on n_frames to maintain thread count and shared memory target
-    const int frames_per_block = min(MAX_FRAME_THREADS_PER_BLOCK, static_cast<int>(n_frames));
-    const int voxels_per_block = max((MIN_THREADS_PER_BLOCK + frames_per_block - 1) / frames_per_block, DEFAULT_NUM_VOXELS_PER_BLOCK);
+    // Calculate block dimensions
+    const int frames_per_block = min(n_frames, MAX_FRAME_THREADS_PER_BLOCK);
+    const int voxels_per_block = calculate_voxels_per_block(frames_per_block);
     dim3 threads_per_block(frames_per_block, voxels_per_block);
     DEBUG_ASSERT(threads_per_block.x * threads_per_block.y <= 1024); // CUDA thread-count limit per block
 
-    const int receive_elements_batch_size = VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE / voxels_per_block;
+    const int receive_elements_batch_size = calculate_receive_elements_batch_size(voxels_per_block);
 
 #ifdef CUDA_DEBUG
     std::cout << "Thread dimensions: " << threads_per_block.x << " (frames) x " << threads_per_block.y
@@ -618,7 +644,8 @@ void _beamform_impl(
             f_number,
             tukey_alpha,
             rx_start_s,
-            n_output_voxels
+            n_output_voxels,
+            receive_elements_batch_size
         );
     } else {
         checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false>, CACHE_CONFIG));
@@ -637,7 +664,8 @@ void _beamform_impl(
             f_number,
             tukey_alpha,
             rx_start_s,
-            n_output_voxels
+            n_output_voxels,
+            receive_elements_batch_size
         );
     }
     // Wait for kernel to complete
