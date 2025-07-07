@@ -60,11 +60,15 @@ struct SectionTimer {
 #endif
 
 // CUDA block and cache configuration
-#define NUM_RECEIVE_ELEMENT_BATCHES 64
-#define RECEIVE_ELEMENTS_BATCH_SIZE (8960 / NUM_RECEIVE_ELEMENT_BATCHES)
+#define DEFAULT_RECEIVE_ELEMENTS_BATCH_SIZE 140  // 8960 elements / 64 batches; might be able to increase to 150
+#define DEFAULT_NUM_VOXELS_PER_BLOCK 8  // Tuned for large-scale beamforming with many frames
+#define VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE (DEFAULT_NUM_VOXELS_PER_BLOCK * DEFAULT_RECEIVE_ELEMENTS_BATCH_SIZE)
+// Results in 140 * 8 * sizeof(float2) = 8960 bytes < 9.6kB, which is the max shared memory per block for max-occupancy
+
+// Some extra-tuning parameters for small-frame-count beamforming (i.e. not ensembles)
+// Keep VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE constant, and adjust voxels_per_block and receive_elements_batch_size
 #define MAX_FRAME_THREADS_PER_BLOCK 32
 #define MIN_THREADS_PER_BLOCK 32
-#define DEFAULT_NUM_VOXELS_PER_BLOCK 8  // Tuned for large-scale beamforming with many frames
 #ifndef CACHE_CONFIG
 #define CACHE_CONFIG cudaFuncCachePreferEqual
 #endif
@@ -257,7 +261,9 @@ __device__ static inline float2 calculateTxRxDelayAndApodization(
  * Thread Organization:
  * - Thread block dimensions: (frames, voxels) with adaptive sizing
  * - Grid dimensions: (voxel_batches_x, voxel_batches_y, receive_element_batches)
- * - Each block processes NUM_VOXELS_PER_BLOCK voxels and RECEIVE_ELEMENTS_BATCH_SIZE receive elements
+ * - Each block processes VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE voxels * receive elements
+ *   By default, this is 8 voxels * 140 receive elements = 1120, although this scales
+ *   to increase thread count if needed.
  *
  * Memory Access Patterns:
  * - Shared memory for delay/apodization tables (reused across frames)
@@ -313,13 +319,16 @@ __global__ void beamformKernel(
     const unsigned int frame_tid = threadIdx.x;  // Frame dimension
     const unsigned int voxel_tid = threadIdx.y;  // Voxel dimension (within block)
     const unsigned int num_frame_threads = blockDim.x;
-    const uint32_t receive_element_block_start_idx = blockIdx.z * RECEIVE_ELEMENTS_BATCH_SIZE;
-    const unsigned int receive_elements_in_batch = min(RECEIVE_ELEMENTS_BATCH_SIZE, n_receive_elements - receive_element_block_start_idx);
+    const unsigned int num_voxels_per_block = blockDim.y;
+    // We scale the receive-elements processed with the number of voxels per block to keep the shared memory usage constant
+    const unsigned int receive_elements_batch_size = VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE / num_voxels_per_block;
+    const uint32_t receive_element_block_start_idx = blockIdx.z * receive_elements_batch_size;
+    const unsigned int receive_elements_in_batch = min(receive_elements_batch_size, n_receive_elements - receive_element_block_start_idx);
     // CUDA: blockIdx.x <= 2**16 - 1, blockIdx.y <= 2**16 - 1, gridDim.x <= 2**16 - 1
     // so we can use uint32_t for voxel_batch_idx
     const uint32_t voxel_batch_idx = blockIdx.x + blockIdx.y * gridDim.x;
-    // However, voxel_batch_idx * NUM_VOXELS_PER_BLOCK may overflow uint32_t, so we use uint64_t for voxel_idx
-    const uint64_t voxel_idx = static_cast<uint64_t>(voxel_batch_idx) * NUM_VOXELS_PER_BLOCK + voxel_tid;  // Voxel dimension (within block)
+    // However, voxel_batch_idx * num_voxels_per_block may overflow uint32_t, so we use uint64_t for voxel_idx
+    const uint64_t voxel_idx = static_cast<uint64_t>(voxel_batch_idx) * num_voxels_per_block + voxel_tid;  // Voxel dimension (within block)
 
 #ifdef CUDA_DEBUG
     const uint64_t n_channel_data = static_cast<uint64_t>(n_receive_elements) * static_cast<uint64_t>(n_samples) * static_cast<uint64_t>(n_frames);
@@ -332,7 +341,7 @@ __global__ void beamformKernel(
 
     // Dynamically allocated shared memory - organized as a single flat array
     // Indexing dimensions: [voxel_tid][receive_element_idx_in_batch]
-    static __shared__ float2 voxel_tau_and_apod_weights[NUM_VOXELS_PER_BLOCK * RECEIVE_ELEMENTS_BATCH_SIZE];
+    static __shared__ float2 voxel_tau_and_apod_weights[VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE];
 
     // Skip if we're outside the valid voxel range
     if (voxel_idx >= n_output_voxels) return;
@@ -361,7 +370,7 @@ __global__ void beamformKernel(
         );
 
         const uint32_t shared_mem_idx = voxel_tid * receive_elements_in_batch + receive_element_idx_in_batch;
-        DEBUG_ASSERT(shared_mem_idx < NUM_VOXELS_PER_BLOCK * receive_elements_in_batch);  // Verify shared memory access is in bounds
+        DEBUG_ASSERT(shared_mem_idx < VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE);  // Verify shared memory access is in bounds
 
         voxel_tau_and_apod_weights[shared_mem_idx] = tau_and_weight;
 
@@ -529,37 +538,39 @@ void _beamform_impl(
     const int frames_per_block = min(MAX_FRAME_THREADS_PER_BLOCK, static_cast<int>(n_frames));
     const int voxels_per_block = max((MIN_THREADS_PER_BLOCK + frames_per_block - 1) / frames_per_block, DEFAULT_NUM_VOXELS_PER_BLOCK);
     dim3 threads_per_block(frames_per_block, voxels_per_block);
-    DEBUG_ASSERT(threads_per_block.x * threads_per_block.y <= 1024, "Thread block size exceeds CUDA limit of 1024 threads");
+    DEBUG_ASSERT(threads_per_block.x * threads_per_block.y <= 1024); // CUDA thread-count limit per block
+
+    const int receive_elements_batch_size = VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE / voxels_per_block;
 
 #ifdef CUDA_DEBUG
     std::cout << "Thread dimensions: " << threads_per_block.x << " (frames) x " << threads_per_block.y
               << " (voxels) = " << threads_per_block.x * threads_per_block.y << " threads per block" << std::endl;
 #endif
 
-    // Calculate grid dimension - each block processes NUM_VOXELS_PER_BLOCK voxels
+    // Calculate grid dimension - each block processes voxels_per_block voxels
     if (n_output_voxels > INT_MAX) {
         throw std::runtime_error("Error: Number of voxels (" + std::to_string(n_output_voxels) +
                                  ") exceeds the maximum integer value (" + std::to_string(INT_MAX) + ").");
     }
-    const int num_blocks = (n_output_voxels + NUM_VOXELS_PER_BLOCK - 1) / NUM_VOXELS_PER_BLOCK;
+    const int num_blocks = (n_output_voxels + voxels_per_block - 1) / voxels_per_block;
     const int max_blocks_per_dim = (1 << 16) - 32; // 2**16 - 32 is the max, CUDA recommends multiples of 32
 
     // Calculate grid dimensions ensuring x dimension doesn't exceed max_blocks_per_dim
     // x&y dimensions: voxel-batches, z dimension: receive-element-batches
     const int grid_x = min(max_blocks_per_dim, num_blocks);
     const int grid_y = (num_blocks + grid_x - 1) / grid_x;
-    const int grid_z = (n_receive_elements + RECEIVE_ELEMENTS_BATCH_SIZE - 1) / RECEIVE_ELEMENTS_BATCH_SIZE;
+    const int grid_z = (n_receive_elements + receive_elements_batch_size - 1) / receive_elements_batch_size;
     dim3 grid(grid_x, grid_y, grid_z);
 
 #ifdef CUDA_PROFILE
     std::cout << "Grid dimensions: " << grid.x << " x " << grid.y << " x " << grid.z << " = "
               << grid.x * grid.y * grid.z << " blocks, each handling "
-              << NUM_VOXELS_PER_BLOCK << " voxels x " << RECEIVE_ELEMENTS_BATCH_SIZE
+              << voxels_per_block << " voxels x " << receive_elements_batch_size
               << " receive_elements" << std::endl;
 #endif
 
     // Check if our shared memory allocation will fit
-    const int shared_mem_size = NUM_VOXELS_PER_BLOCK * RECEIVE_ELEMENTS_BATCH_SIZE * sizeof(float2);
+    static constexpr int shared_mem_size = VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE * sizeof(float2);
     int device_id;
     checkCudaErrors(cudaGetDevice(&device_id));
     int max_shared_mem;
@@ -573,7 +584,7 @@ void _beamform_impl(
     if (shared_mem_size > max_shared_mem) {
         throw std::runtime_error("Error: Shared memory per block (" + std::to_string(shared_mem_size)
                   + " bytes) exceeds device limit (" + std::to_string(max_shared_mem)
-                  + " bytes). Reducing NUM_VOXELS_PER_BLOCK or RECEIVE_ELEMENTS_BATCH_SIZE is required.");
+                  + " bytes). Reducing DEFAULT_NUM_VOXELS_PER_BLOCK or DEFAULT_RECEIVE_ELEMENTS_BATCH_SIZE is required.");
     }
 
 #ifdef CUDA_PROFILE
