@@ -93,10 +93,21 @@ mach optimize GPU memory access patterns to improve performance. For those inter
 
 ### Memory Bandwidth and Compute Utilization
 
-*[Stub: Detailed analysis of memory bandwidth utilization and compute efficiency using Nsight Compute profiling results]*
+The current thread-block and L1-cache parameters were selected for an [RTX4090 (Blackwell)](https://images.nvidia.com/aem-dam/Solutions/geforce/blackwell/nvidia-rtx-blackwell-gpu-architecture.pdf). These should work well across [Blackwell Architecture GPUs](https://images.nvidia.com/aem-dam/Solutions/geforce/blackwell/nvidia-rtx-blackwell-gpu-architecture.pdf).
 
-*[Analysis of achieved bandwidth and compute utilization to be added]*
+If you're wondering if different thread-block or L1-cache parameters might be better for your specific GPU, [Nsight Compute](https://developer.nvidia.com/nsight-compute) can be helpful to identify bottlenecks.
 
+![Nsight Compute Profile Summary](assets/profile_nsight_compute.png)
+
+*Figure: Nsight Compute profiling results shows 94% memory throughput and 78% compute throughput for the mach kernel on an RTX4090. (Different dataset)*
+
+> **Note**: These utilization percentages are kernel-specific metrics from Nsight Compute, not the overall GPU utilization shown by `nvidia-smi` or `nvtop`.
+
+![Nsight Compute memory workload analysis](assets/profile_nsight_compute.png)
+
+*Figure: Example Nsight Compute memory workload analysis. (Different dataset)*
+
+Anecdotally, kernel-duration seems to hit a pareto-optimum at >70% memory+compute-efficiency. Changing parameters at that point tends to trade-off memory/compute in a way that doesn't change the overall kernel-time.
 
 ## Scaling Performance
 
