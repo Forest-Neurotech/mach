@@ -86,7 +86,7 @@ struct SectionTimer {
  * Calculate the number of voxels to process per block based on frame count.
  * For small frame counts (< 4), we increase voxels_per_block to maintain at least MIN_THREADS_PER_BLOCK threads.
  * For larger frame counts, we use DEFAULT_NUM_VOXELS_PER_BLOCK for optimal performance.
- * 
+ *
  * @param frames_per_block Number of frames to process in this block
  * @return Number of voxels to process per block
  */
@@ -100,7 +100,7 @@ static inline __host__ __device__ int calculate_voxels_per_block(int frames_per_
 /**
  * Calculate the number of receive elements to process per batch based on voxels per block.
  * This maintains constant shared memory usage by scaling inversely with voxels_per_block.
- * 
+ *
  * @param voxels_per_block Number of voxels being processed in this block
  * @return Number of receive elements to process per batch
  */
