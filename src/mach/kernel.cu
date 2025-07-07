@@ -62,7 +62,9 @@ struct SectionTimer {
 // CUDA block and cache configuration
 #define NUM_RECEIVE_ELEMENT_BATCHES 64
 #define RECEIVE_ELEMENTS_BATCH_SIZE (8960 / NUM_RECEIVE_ELEMENT_BATCHES)
-#define NUM_VOXELS_PER_BLOCK 8
+#define MAX_FRAME_THREADS_PER_BLOCK 32
+#define MIN_THREADS_PER_BLOCK 32
+#define DEFAULT_NUM_VOXELS_PER_BLOCK 8  // Tuned for large-scale beamforming with many frames
 #ifndef CACHE_CONFIG
 #define CACHE_CONFIG cudaFuncCachePreferEqual
 #endif
@@ -522,7 +524,12 @@ void _beamform_impl(
 
     // Configure thread-blocks
     // x dimension: frames, y dimension: voxels
-    dim3 threads_per_block(min(32, static_cast<int>(n_frames)), NUM_VOXELS_PER_BLOCK);
+    // Use at least 32 threads per block even when n_frames == 1
+    // So we adjust voxels_per_block based on n_frames to maintain thread count and shared memory target
+    const int frames_per_block = min(MAX_FRAME_THREADS_PER_BLOCK, static_cast<int>(n_frames));
+    const int voxels_per_block = max((MIN_THREADS_PER_BLOCK + frames_per_block - 1) / frames_per_block, DEFAULT_NUM_VOXELS_PER_BLOCK);
+    dim3 threads_per_block(frames_per_block, voxels_per_block);
+    DEBUG_ASSERT(threads_per_block.x * threads_per_block.y <= 1024, "Thread block size exceeds CUDA limit of 1024 threads");
 
 #ifdef CUDA_DEBUG
     std::cout << "Thread dimensions: " << threads_per_block.x << " (frames) x " << threads_per_block.y
