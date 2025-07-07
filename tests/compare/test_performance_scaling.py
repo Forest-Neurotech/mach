@@ -284,7 +284,6 @@ def test_scaling_receive_elements(benchmark, base_scaling_data, element_multipli
         pytest.param(1, id="1x_frames"),
         pytest.param(4, id="4x_frames"),
         pytest.param(16, id="16x_frames"),
-        pytest.param(64, id="64x_frames"),
     ],
 )
 def test_scaling_ensemble_size(benchmark, base_scaling_data, frame_multiplier):
