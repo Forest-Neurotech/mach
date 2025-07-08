@@ -419,7 +419,7 @@ def create_scaling_plots(
 
     # Adjust layout to accommodate secondary x-axes and shared x-axis label
     plt.tight_layout()
-    plt.subplots_adjust(top=0.85, bottom=0.08)  # More space for secondary axes and shared label
+    plt.subplots_adjust(top=0.8, bottom=0.08)  # More space for secondary axes and shared label
 
     # Save or show plot
     if output_path:
