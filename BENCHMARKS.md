@@ -157,6 +157,18 @@ In this example, the output array (`out`) represents 90% of memory usage, demons
 
 ### Performance Scaling with Dataset Size
 
+The performance scaling tests measure how mach's beamforming performance scales with different dataset dimensions:
+
+- **Voxel scaling**: Testing grid resolution from 1e-4 to 1e-5 meters (63k to 6.3M voxels)
+- **Element scaling**: Testing 1x to 64x receive elements (128 to 8,192 elements)
+- **Frame scaling**: Testing 1/32x to 16x ensemble size (1 to 512 frames)
+
+To generate scaling plots from benchmark data:
+
+```bash
+python tests/plot_scaling.py --output scaling_results.png
+```
+
 *[Figure placeholder: Performance scaling with number of voxels]*
 
 *[Figure placeholder: Performance scaling with number of receive elements]*
