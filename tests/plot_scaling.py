@@ -84,7 +84,7 @@ def parse_scaling_parameter(param_string: str, test_type: str) -> float:
     return None
 
 
-def calculate_scaling_factors(benchmark_data: dict) -> dict[str, list[dict]]:
+def calculate_scaling_factors(benchmark_data: dict) -> dict[str, list[dict]]:  # noqa: C901
     """Calculate scaling factors for each test type."""
     scaling_data = {"voxels": [], "elements": [], "frames": []}
 
@@ -151,7 +151,7 @@ def calculate_scaling_factors(benchmark_data: dict) -> dict[str, list[dict]]:
 
         # Average multiple runs for each scaling factor
         deduplicated = []
-        for sf, items in grouped.items():
+        for items in grouped.values():
             if len(items) == 1:
                 deduplicated.append(items[0])
             else:
@@ -205,7 +205,7 @@ def calculate_points_per_second(time_seconds: float, scaling_factor: float, test
     return total_points / time_seconds
 
 
-def create_scaling_plots(
+def create_scaling_plots(  # noqa: C901
     scaling_data: dict[str, list[dict]], benchmark_data: dict, output_path: Optional[str] = None
 ) -> None:
     """Create 2x3 subplot grid showing scaling performance with shared x-axis."""
@@ -367,7 +367,7 @@ def create_scaling_plots(
                 0.95,
                 f"Slope: ~{time_slope:.2f}",
                 transform=axes[0, col].transAxes,
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
+                bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8},
                 verticalalignment="top",
             )
 
@@ -376,7 +376,7 @@ def create_scaling_plots(
                 0.05,
                 f"Slope: ~{pps_slope:.2f}",
                 transform=axes[1, col].transAxes,
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
+                bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8},
                 verticalalignment="bottom",
             )
 

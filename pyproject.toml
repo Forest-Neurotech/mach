@@ -178,7 +178,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "test_*.py" = ["S101"]
-"tests/*" = ["S101"]
+"tests/*" = ["S101", "RUF001", "RUF003"]
 
 [tool.ruff.format]
 preview = true
