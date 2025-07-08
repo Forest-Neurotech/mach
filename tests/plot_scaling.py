@@ -69,12 +69,14 @@ def parse_scaling_parameter(param_string: str, test_type: str) -> float:
         if match:
             return int(match.group(1))
     elif test_type == "frames":
-        # Handle fractional and integer multipliers
-        if "1/32x_frames" in param_string:
-            return 1 / 32
-        elif "1/8x_frames" in param_string:
-            return 1 / 8
+        # Handle fractional multipliers like "1/32x_frames"
+        fraction_match = re.search(r"(\d+)/(\d+)x_frames", param_string)
+        if fraction_match:
+            numerator = int(fraction_match.group(1))
+            denominator = int(fraction_match.group(2))
+            return numerator / denominator
         else:
+            # Handle integer multipliers like "4x_frames"
             match = re.search(r"([0-9]+)x_frames", param_string)
             if match:
                 return int(match.group(1))
@@ -137,9 +139,36 @@ def calculate_scaling_factors(benchmark_data: dict) -> dict[str, list[dict]]:
                     "name": benchmark["name"],
                 })
 
-    # Sort by scaling factor for proper plotting
+    # Sort by scaling factor and deduplicate by averaging multiple runs
     for key in scaling_data:
-        scaling_data[key].sort(key=lambda x: x["scaling_factor"])
+        # Group by scaling factor
+        grouped = {}
+        for item in scaling_data[key]:
+            sf = item["scaling_factor"]
+            if sf not in grouped:
+                grouped[sf] = []
+            grouped[sf].append(item)
+
+        # Average multiple runs for each scaling factor
+        deduplicated = []
+        for sf, items in grouped.items():
+            if len(items) == 1:
+                deduplicated.append(items[0])
+            else:
+                # Average the timing results
+                avg_mean = sum(item["mean_time"] for item in items) / len(items)
+                avg_stddev = np.sqrt(sum(item["stddev_time"] ** 2 for item in items) / len(items))
+
+                # Use the first item as template and update timing
+                avg_item = items[0].copy()
+                avg_item["mean_time"] = avg_mean
+                avg_item["stddev_time"] = avg_stddev
+                avg_item["name"] = f"{items[0]['name']} (avg of {len(items)} runs)"
+                deduplicated.append(avg_item)
+
+        # Sort by scaling factor
+        deduplicated.sort(key=lambda x: x["scaling_factor"])
+        scaling_data[key] = deduplicated
 
     return scaling_data
 
