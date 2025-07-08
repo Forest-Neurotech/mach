@@ -185,8 +185,8 @@ def sparse_backend(request):
 @pytest.mark.benchmark(
     group="doppler_disk",
     min_time=0.1,
-    max_time=5.0,
-    min_rounds=5,
+    max_time=3.0,
+    min_rounds=3,
     warmup=True,
     warmup_iterations=1,
 )
@@ -245,8 +245,8 @@ def test_pymust_benchmark(
 @pytest.mark.benchmark(
     group="doppler_disk",
     min_time=0.1,
-    max_time=5.0,
-    min_rounds=5,
+    max_time=3.0,
+    min_rounds=3,
     warmup=True,
     warmup_iterations=1,
 )
@@ -344,8 +344,8 @@ def test_mach(benchmark, benchmark_data, pymust_das_matrix, output_dir):
 @pytest.mark.benchmark(
     group="load_from_cpu: doppler_disk",
     min_time=0.1,
-    max_time=5.0,
-    min_rounds=5,
+    max_time=3.0,
+    min_rounds=3,
     warmup=True,
     warmup_iterations=1,
 )

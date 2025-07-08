@@ -227,8 +227,8 @@ def mach_single_transmit_kwargs(
 @pytest.mark.benchmark(
     group="doppler_disk",
     min_time=0.1,
-    max_time=5.0,
-    min_rounds=5,
+    max_time=3.0,
+    min_rounds=3,
     warmup=True,
     warmup_iterations=1,
 )
