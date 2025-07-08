@@ -179,21 +179,25 @@ def calculate_points_per_second(time_seconds: float, scaling_factor: float, test
 def create_scaling_plots(
     scaling_data: dict[str, list[dict]], benchmark_data: dict, output_path: Optional[str] = None
 ) -> None:
-    """Create 2x3 subplot grid showing scaling performance."""
+    """Create 2x3 subplot grid showing scaling performance with shared x-axis."""
 
     # Set up the plot style
     sns.set_style("whitegrid")
     sns.set_palette("husl")
 
-    # Create 2x3 subplot grid
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    # Create 2x3 subplot grid with shared x-axis and shared y-axes within each row
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10), sharex=True, sharey="row")
 
     # Test types and their display names
     test_types = [
-        ("voxels", "Number of Voxels", "n_voxels"),
-        ("elements", "Number of Elements", "n_elements"),
-        ("frames", "Number of Frames", "n_frames"),
+        ("voxels", "Scaling Voxels", "n_voxels"),
+        ("elements", "Scaling Elements", "n_elements"),
+        ("frames", "Scaling Frames", "n_frames"),
     ]
+
+    # Collect all total points values to determine x-axis limits
+    all_total_points = []
+    secondary_axes = []  # Store references to secondary axes
 
     for col, (test_type, title, x_param) in enumerate(test_types):
         data = scaling_data[test_type]
@@ -206,6 +210,20 @@ def create_scaling_plots(
         y_times = [d["mean_time"] for d in data]
         y_errors = [d["stddev_time"] for d in data]
 
+        # Calculate total points for main x-axis
+        total_points = []
+        for d in data:
+            if test_type == "voxels":
+                points = PYMUST_DATASET_PARAMS["n_elements"] * d["n_voxels"] * PYMUST_DATASET_PARAMS["n_frames"]
+            elif test_type == "elements":
+                points = d["n_elements"] * PYMUST_DATASET_PARAMS["n_voxels"] * PYMUST_DATASET_PARAMS["n_frames"]
+            elif test_type == "frames":
+                points = PYMUST_DATASET_PARAMS["n_elements"] * PYMUST_DATASET_PARAMS["n_voxels"] * d["n_frames"]
+            total_points.append(points)
+
+        # Add to overall collection for x-axis limits calculation
+        all_total_points.extend(total_points)
+
         # Calculate points per second
         y_points_per_sec = []
         y_points_errors = []
@@ -216,24 +234,51 @@ def create_scaling_plots(
 
             # Error propagation for points per second
             # If pps = total_points / time, then error in pps ≈ total_points * error_time / time²
-            total_points = pps * d["mean_time"]
-            pps_error = total_points * d["stddev_time"] / (d["mean_time"] ** 2)
+            total_points_calc = pps * d["mean_time"]
+            pps_error = total_points_calc * d["stddev_time"] / (d["mean_time"] ** 2)
             y_points_errors.append(pps_error)
 
-        # Top row: Runtime scaling
+        # Top row: Runtime scaling vs Total Points
         axes[0, col].errorbar(
-            x_values, y_times, yerr=y_errors, marker="o", linewidth=2, markersize=8, capsize=5, capthick=2
+            total_points, y_times, yerr=y_errors, marker="o", linewidth=2, markersize=8, capsize=5, capthick=2
         )
-        axes[0, col].set_xlabel(title)
         axes[0, col].set_ylabel("Runtime (seconds)")
         axes[0, col].set_title(f"{title} vs Runtime")
         axes[0, col].set_xscale("log")
         axes[0, col].set_yscale("log")
         axes[0, col].grid(True, alpha=0.3)
 
-        # Bottom row: Points per second scaling
+        # Add secondary x-axis for specific parameter (top row)
+        ax2_top = axes[0, col].twiny()
+        ax2_top.set_xscale("log")
+        secondary_axes.append(ax2_top)
+
+        # Set tick locations and labels for specific parameter
+        if len(x_values) >= 2:
+            # Map total points to x_values for ticks
+            ax2_top.set_xticks(total_points)
+            # Format specific parameter values
+            if test_type == "voxels":
+                # Calculate square root dimensions for voxels
+                param_labels = []
+                for v in x_values:
+                    # Calculate approximate square root dimensions
+                    sqrt_dim = int(np.sqrt(v))
+                    param_labels.append(f"{sqrt_dim}x{sqrt_dim}")
+                ax2_top.set_xlabel("Grid Dimensions", fontsize=10)
+            elif test_type == "elements":
+                param_labels = [f"{int(v)}" for v in x_values]
+                ax2_top.set_xlabel("Number of Elements", fontsize=10)
+            elif test_type == "frames":
+                param_labels = [f"{int(v)}" for v in x_values]
+                ax2_top.set_xlabel("Number of Frames", fontsize=10)
+
+            ax2_top.set_xticklabels(param_labels, rotation=45, ha="left")
+        ax2_top.tick_params(axis="x", labelsize=8)
+
+        # Bottom row: Points per second scaling vs Total Points
         axes[1, col].errorbar(
-            x_values,
+            total_points,
             y_points_per_sec,
             yerr=y_points_errors,
             marker="s",
@@ -243,17 +288,43 @@ def create_scaling_plots(
             capthick=2,
             color="orange",
         )
-        axes[1, col].set_xlabel(title)
         axes[1, col].set_ylabel("Points per Second")
         axes[1, col].set_title(f"{title} vs Throughput")
         axes[1, col].set_xscale("log")
         axes[1, col].set_yscale("log")
         axes[1, col].grid(True, alpha=0.3)
 
-        # Add annotations for scaling behavior
+        # Extend y-axis range for bottom row to show more detail
+        current_ylim = axes[1, col].get_ylim()
+        # Extend lower bound by factor of 10, keep upper bound with some margin
+        new_ylim = (current_ylim[0] / 10, current_ylim[1] * 2)
+        axes[1, col].set_ylim(new_ylim)
+
+        # Add secondary x-axis for specific parameter (bottom row)
+        ax2_bottom = axes[1, col].twiny()
+        ax2_bottom.set_xscale("log")
+        secondary_axes.append(ax2_bottom)
+
+        # Set tick locations and labels for specific parameter
         if len(x_values) >= 2:
-            # Calculate approximate scaling exponent
-            log_x = np.log10(x_values)
+            # Map total points to x_values for ticks
+            ax2_bottom.set_xticks(total_points)
+            # Use same parameter labels as top row
+            ax2_bottom.set_xticklabels(param_labels, rotation=45, ha="left")
+
+            if test_type == "voxels":
+                ax2_bottom.set_xlabel("Grid Dimensions", fontsize=10)
+            elif test_type == "elements":
+                ax2_bottom.set_xlabel("Number of Elements", fontsize=10)
+            elif test_type == "frames":
+                ax2_bottom.set_xlabel("Number of Frames", fontsize=10)
+
+        ax2_bottom.tick_params(axis="x", labelsize=8)
+
+        # Add annotations for scaling behavior
+        if len(total_points) >= 2:
+            # Calculate approximate scaling exponent using total points
+            log_x = np.log10(total_points)
             log_y_time = np.log10(y_times)
             log_y_pps = np.log10(y_points_per_sec)
 
@@ -265,7 +336,7 @@ def create_scaling_plots(
             axes[0, col].text(
                 0.05,
                 0.95,
-                f"Scaling: ~{time_slope:.2f}",
+                f"Slope: ~{time_slope:.2f}",
                 transform=axes[0, col].transAxes,
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
                 verticalalignment="top",
@@ -274,11 +345,37 @@ def create_scaling_plots(
             axes[1, col].text(
                 0.05,
                 0.05,
-                f"Scaling: ~{pps_slope:.2f}",
+                f"Slope: ~{pps_slope:.2f}",
                 transform=axes[1, col].transAxes,
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
                 verticalalignment="bottom",
             )
+
+    # Calculate x-axis limits based on actual data
+    if all_total_points:
+        x_min = min(all_total_points)
+        x_max = max(all_total_points)
+
+        # Add some padding (10% on each side in log space)
+        log_x_min = np.log10(x_min)
+        log_x_max = np.log10(x_max)
+        log_range = log_x_max - log_x_min
+        log_padding = log_range * 0.1
+
+        x_min_padded = 10 ** (log_x_min - log_padding)
+        x_max_padded = 10 ** (log_x_max + log_padding)
+
+        # Set x-axis limits for all plots
+        for col in range(3):
+            axes[0, col].set_xlim(x_min_padded, x_max_padded)
+            axes[1, col].set_xlim(x_min_padded, x_max_padded)
+
+        # Update secondary x-axis limits
+        for ax in secondary_axes:
+            ax.set_xlim(x_min_padded, x_max_padded)
+
+    # Set shared x-axis label for bottom row
+    fig.text(0.5, 0.02, "Total Points (elements × voxels × frames)", ha="center", fontsize=12)
 
     # Get system info for overall title
     system_info = get_system_info(benchmark_data)
@@ -286,14 +383,14 @@ def create_scaling_plots(
 
     # Overall title
     fig.suptitle(
-        f"MACH Beamformer Performance Scaling\nPyMUST Rotating Disk Dataset | {system_info['cpu']} | {gpu_info}",
+        f"mach Performance Scaling\nPyMUST Rotating Disk Dataset | {system_info['cpu']} | {gpu_info}",
         fontsize=16,
         fontweight="bold",
     )
 
-    # Adjust layout
+    # Adjust layout to accommodate secondary x-axes and shared x-axis label
     plt.tight_layout()
-    plt.subplots_adjust(top=0.9)
+    plt.subplots_adjust(top=0.85, bottom=0.08)  # More space for secondary axes and shared label
 
     # Save or show plot
     if output_path:
@@ -301,6 +398,8 @@ def create_scaling_plots(
         print(f"Scaling plot saved to: {output_path}")
     else:
         plt.show()
+
+    plt.close()
 
 
 def get_system_info(data: dict) -> dict:
