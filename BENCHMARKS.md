@@ -157,33 +157,34 @@ In this example, the output array (`out`) represents 90% of memory usage, demons
 
 ### Performance Scaling with Dataset Size
 
-*[Figure placeholder: Performance scaling with number of voxels]*
-
-*[Figure placeholder: Performance scaling with number of receive elements]*
-
-*[Figure placeholder: Performance scaling with ensemble size (frames)]*
-
-## Large-Scale Dataset Performance
-
-### Practical Workloads
-
-*[Stub: Performance analysis on larger, more realistic datasets]*
-
 Typical functional ultrasound imaging (fUSI) datasets we're targeting:
 - **1024+ receive elements** (high-density arrays)
 - **1M+ voxels** (volumetric or high-resolution imaging)
 - **100+ frames** (longer temporal windows)
-- **Real-time processing** requirements
 
-*[Figure placeholder: Performance scaling results]*
+The performance scaling tests measure how mach's beamforming performance scales with different dataset dimensions:
 
-### Memory Scaling Characteristics
+- **Voxel scaling**: Testing grid resolution from 1e-4 (default) to 1e-5 meters (63k to 6.3M voxels)
+- **Element scaling**: Testing 1x to 64x receive elements (128 to 8,192 elements)
+- **Frame scaling**: Testing 1/32x to 16x ensemble size (1 to 512 frames)
 
-*[Stub: Analysis of memory usage patterns and optimization strategies for large datasets]*
+To run the scaling benchmarks and then generate plots:
 
-## Performance Optimization Guide
+```bash
+# Run pytest-benchmark
+make benchmark
 
-### For Maximum Throughput
+# Generate plots
+python tests/plot_scaling.py --output assets/benchmark-scaling.png
+```
+
+![Benchmark scaling workload size](assets/benchmark-scaling.svg)
+
+*FIgure: throughput is largely consistent across dataset sizes, except for an improvement for >=16 frames.*
+
+## Performance suggestions
+
+For Maximum Throughput:
 
 1. **Keep data on GPU**: Use CuPy/JAX arrays to avoid CPU↔GPU transfers
 2. **Use sufficient ensemble size**: Use ≥16 frames for complex64 or ≥32 frames for float32 to fully coalesce reads to global memory
