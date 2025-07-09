@@ -103,6 +103,8 @@ def pymust_das_matrix(pymust_iq_data, pymust_meshgrid, pymust_params):
 
     # Create DAS matrix once (it's the same for all frames)
     M = pymust.dasmtx(1j * np.array(pymust_iq_data.shape[:2]), x_grid, z_grid, pymust_params)
+    # All the GPU methods use complex64, so let's do the same to be consistent
+    M = M.astype(np.complex64)
     return M
 
 
