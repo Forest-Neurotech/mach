@@ -11,4 +11,4 @@ try:
     __version__ = version("mach")
 except PackageNotFoundError:
     # Update via bump-my-version, not manually
-    __version__ = "0.0.2"
+    __version__ = "0.0.3"
