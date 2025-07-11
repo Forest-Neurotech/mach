@@ -15,6 +15,6 @@ replace = 'version = "{new_version}"'
 
 [[tool.bumpversion.files]]
 # Update version in __init__.py
-filename = "mach/__init__.py"
+filename = "src/mach/__init__.py"
 search = '__version__ = "{current_version}"'
 replace = '__version__ = "{new_version}"'
