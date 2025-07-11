@@ -17,8 +17,10 @@ from pathlib import Path
 from typing import Optional
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib.ticker import MaxNLocator
 
 # Constants based on PyMUST rotating disk dataset
 # Based on the imaging grid and data setup in tests/compare/test_pymust.py
@@ -152,93 +154,354 @@ def plot_benchmark_results(
     df: pd.DataFrame,
     data: dict,
     use_points_per_second: bool = False,
+    use_bar_chart: bool = True,
     output_path: Optional[str] = None,
     show_values: bool = True,
+    short_title: bool = False,
+    linear_scale: bool = False,
+    broken_axis: bool = False,
 ) -> None:
-    """Create horizontal boxplot of benchmark results."""
+    """Create horizontal plot of benchmark results (bar chart or boxplot)."""
 
     # Add baseline references
     df_with_baselines = add_baseline_references(df, use_points_per_second)
-
-    # Create plot data
-    plot_df, unit_label = create_boxplot_data(df_with_baselines, use_points_per_second)
 
     # Set up the plot style
     sns.set_style("ticks")
     sns.set_palette("Set2")
 
-    # Create figure - make it wider if showing values
-    fig_width = 8 if show_values else 6
-    fig, ax = plt.subplots(figsize=(fig_width, 4))
+    if broken_axis and use_bar_chart and linear_scale:
+        # Special handling for broken axis - create two subplots
+        fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True, figsize=(10, 4))
+        fig.subplots_adjust(wspace=0.05)  # adjust space between Axes
 
-    # Calculate mean values and sort methods
-    method_stats = plot_df.groupby("method")[unit_label].agg(["mean", "median"]).sort_values("mean")
-    method_order = method_stats.index
+        # Calculate statistics for bar chart
+        method_stats = []
+        for _, row in df_with_baselines.iterrows():
+            timing_data = row["data"]
 
-    # Create boxplot with ordered methods
-    sns.boxplot(
-        data=plot_df,
-        y="method",
-        x=unit_label,
-        ax=ax,
-        orient="h",
-        order=method_order,
-        whis=100,  # extend whiskers instead of showing fliers
-    )
-
-    # Add value annotations if requested
-    if show_values:
-        # Get the maximum x-value for positioning text
-        x_max = plot_df[unit_label].max()
-
-        # Add text annotations showing median values
-        for i, method in enumerate(method_order):
-            median_val = method_stats.loc[method, "median"]
-
-            # Format the value appropriately
             if use_points_per_second:
-                value_text = f"{median_val:.2e}"
+                values = [calculate_points_per_second(t) for t in timing_data]
             else:
-                if median_val >= 1:
-                    value_text = f"{median_val:.3f} s"
-                else:
-                    value_text = f"{median_val * 1000:.1f} ms"
+                values = list(timing_data)
 
-            # Position text to the right of the plot
-            ax.text(
-                x_max * 1.5,
-                i,
-                value_text,
-                verticalalignment="center",
-                fontsize=9,
-                bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8},
+            # Calculate statistics
+            mean_val = np.mean(values)
+            std_val = np.std(values)
+
+            method_stats.append({
+                "method": row["name"],
+                "group": row["group"],
+                "mean": mean_val,
+                "std": std_val,
+                "median": np.median(values),
+            })
+
+        # Convert to DataFrame and sort
+        stats_df = pd.DataFrame(method_stats)
+        stats_df = stats_df.sort_values("mean")
+
+        # Find the breakpoint - typically the largest outlier
+        max_val = stats_df["mean"].max()
+        second_max = stats_df["mean"].nlargest(2).iloc[1]
+
+        # Set break point between the largest and second largest
+        break_point = second_max + (max_val - second_max) * 0.1
+
+        # Create colors
+        colors = sns.color_palette("Set2", len(stats_df))
+
+        # Plot ALL data on BOTH axes
+        bars1 = ax1.barh(
+            range(len(stats_df)),
+            stats_df["mean"],
+            xerr=stats_df["std"],
+            height=0.6,
+            capsize=3,
+            color=colors,
+            alpha=0.8,
+            error_kw={"alpha": 0.6},
+        )
+
+        bars2 = ax2.barh(
+            range(len(stats_df)),
+            stats_df["mean"],
+            xerr=stats_df["std"],
+            height=0.6,
+            capsize=3,
+            color=colors,
+            alpha=0.8,
+            error_kw={"alpha": 0.6},
+        )
+
+        # Set y-axis labels on both axes
+        ax1.set_yticks(range(len(stats_df)))
+        ax1.set_yticklabels(stats_df["method"])
+        ax2.set_yticks(range(len(stats_df)))
+        ax2.set_yticklabels(stats_df["method"])
+
+        # Set different x-axis limits for each panel
+        # Left panel: focus on smaller values (regular data)
+        ax1.set_xlim(0, break_point)
+        # Right panel: focus on larger values (outliers)
+        ax2.set_xlim(break_point * 0.9, max_val * 1.3)
+
+        # Add value annotations if requested
+        if show_values:
+            for i, (_, row) in enumerate(stats_df.iterrows()):
+                value = row["median"]
+
+                # Format the value appropriately
+                if use_points_per_second:
+                    value_text = f"{value:.2e}"
+                else:
+                    if value >= 1:
+                        value_text = f"{value:.3f} s"
+                    else:
+                        value_text = f"{value * 1000:.1f} ms"
+
+                # Determine which panel to put the annotation on
+                if row["mean"] <= break_point:
+                    # Small values go on left panel
+                    x_pos = row["mean"] + row["std"] * 1.2
+                    if x_pos < break_point * 0.95:  # Make sure annotation fits within panel
+                        ax1.text(
+                            x_pos,
+                            i,
+                            value_text,
+                            verticalalignment="center",
+                            fontsize=9,
+                            bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8},
+                        )
+                else:
+                    # Large values go on right panel
+                    x_pos = row["mean"] + row["std"] * 1.2
+                    ax2.text(
+                        x_pos,
+                        i,
+                        value_text,
+                        verticalalignment="center",
+                        fontsize=9,
+                        bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8},
+                    )
+
+        # Hide spines between axes
+        ax1.spines.right.set_visible(False)
+        ax2.spines.left.set_visible(False)
+        ax1.yaxis.tick_left()
+        ax2.yaxis.tick_right()
+
+        # Add proper broken axis slashes following matplotlib example style
+        d = 0.5  # proportion of vertical to horizontal extent of the slanted line
+        kwargs = dict(
+            marker=[(-1, -d), (1, d)], markersize=12, linestyle="none", color="k", mec="k", mew=1, clip_on=False
+        )
+        # For horizontal broken axis, we need to place slashes on the right edge of left panel
+        # and left edge of right panel
+        ax1.plot([1, 1], [0, 1], transform=ax1.transAxes, **kwargs)
+        ax2.plot([0, 0], [0, 1], transform=ax2.transAxes, **kwargs)
+
+        # Set unit labels
+        unit_label = "points/second" if use_points_per_second else "time (s)"
+        fig.text(0.5, 0.02, unit_label, ha="center", fontsize=12)
+
+        # Add grids
+        ax1.grid(True, alpha=0.3, axis="x")
+        ax2.grid(True, alpha=0.3, axis="x")
+
+        # Adjust x-axis limits to prevent overlapping labels
+        if show_values:
+            # Left panel: ensure space for annotations
+            ax1.set_xlim(0, break_point * 0.95)
+            # Right panel: ensure space for annotations
+            ax2.set_xlim(break_point * 0.9, max_val * 1.4)
+
+        # Improve x-axis tick spacing to prevent overlap
+        ax1.xaxis.set_major_locator(MaxNLocator(nbins=4))
+        ax2.xaxis.set_major_locator(MaxNLocator(nbins=4))
+
+        # Get system info for title
+        system_info = get_system_info(data)
+        gpu_info = get_gpu_info()
+
+        # Set title on the figure
+        if short_title:
+            title_text = "Beamforming the PyMUST Rotating Disk Dataset"
+        else:
+            title_text = (
+                f"Beamforming Performance Comparison\n"
+                f"PyMUST Rotating Disk Dataset "
+                f"({PYMUST_DATASET_PARAMS['n_elements']} elements, "
+                f"{PYMUST_DATASET_PARAMS['n_voxels']:,} voxels, "
+                f"{PYMUST_DATASET_PARAMS['n_frames']} frames)\n"
+                f"{system_info['cpu']} | {gpu_info} | {system_info['system']}"
+            )
+        fig.suptitle(title_text, fontsize=12)
+
+    else:
+        # Original single-axis plotting
+        # Create figure - make it wider if showing values
+        fig_width = 8 if show_values else 6
+        fig, ax = plt.subplots(figsize=(fig_width, 4))
+
+        if use_bar_chart:
+            # Calculate statistics for bar chart
+            method_stats = []
+            for _, row in df_with_baselines.iterrows():
+                timing_data = row["data"]
+
+                if use_points_per_second:
+                    values = [calculate_points_per_second(t) for t in timing_data]
+                else:
+                    values = list(timing_data)
+
+                # Calculate statistics
+                mean_val = np.mean(values)
+                std_val = np.std(values)
+
+                method_stats.append({
+                    "method": row["name"],
+                    "group": row["group"],
+                    "mean": mean_val,
+                    "std": std_val,
+                    "median": np.median(values),
+                })
+
+            # Convert to DataFrame and sort
+            stats_df = pd.DataFrame(method_stats)
+            stats_df = stats_df.sort_values("mean")
+
+            # Create horizontal bar chart
+            colors = sns.color_palette("Set2", len(stats_df))
+            bars = ax.barh(
+                range(len(stats_df)),
+                stats_df["mean"],
+                xerr=stats_df["std"],
+                height=0.6,
+                capsize=3,
+                color=colors,
+                alpha=0.8,
+                error_kw={"alpha": 0.6},
             )
 
-    # Get system info for title
-    system_info = get_system_info(data)
-    gpu_info = get_gpu_info()
+            # Set y-axis labels
+            ax.set_yticks(range(len(stats_df)))
+            ax.set_yticklabels(stats_df["method"])
 
-    # Customize the plot
-    title_lines = [
-        "Beamforming Performance Comparison",
-        f"PyMUST Rotating Disk Dataset "
-        f"({PYMUST_DATASET_PARAMS['n_elements']} elements, "
-        f"{PYMUST_DATASET_PARAMS['n_voxels']:,} voxels, "
-        f"{PYMUST_DATASET_PARAMS['n_frames']} frames)",
-        f"{system_info['cpu']} | {gpu_info} | {system_info['system']}",
-    ]
-    ax.set_title("\n".join(title_lines))
+            # Set unit label for x-axis
+            unit_label = "points/second" if use_points_per_second else "time (s)"
+            ax.set_xlabel(unit_label)
 
-    # Set log scale (large dynamic range)
-    ax.set_xscale("log")
+            # Add value annotations if requested
+            if show_values:
+                for i, (_, row) in enumerate(stats_df.iterrows()):
+                    value = row["median"]  # Use median for consistency with boxplot
 
-    # Add grid for better readability
-    ax.grid(True, alpha=0.3, axis="x")
+                    # Format the value appropriately
+                    if use_points_per_second:
+                        value_text = f"{value:.2e}"
+                    else:
+                        if value >= 1:
+                            value_text = f"{value:.3f} s"
+                        else:
+                            value_text = f"{value * 1000:.1f} ms"
 
-    # Extend x-axis limits if showing values to make room for text
-    if show_values:
-        xlim = ax.get_xlim()
-        ax.set_xlim(xlim[0], xlim[1] * 3)  # Extend right limit
+                    # Position text closer to the bar end (mean + std for error bar end)
+                    x_pos = row["mean"] + row["std"] * 1.1  # Small offset from error bar
+
+                    ax.text(
+                        x_pos,
+                        i,
+                        value_text,
+                        verticalalignment="center",
+                        fontsize=9,
+                        bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8},
+                    )
+
+        else:
+            # Original boxplot code
+            plot_df, unit_label = create_boxplot_data(df_with_baselines, use_points_per_second)
+
+            # Calculate mean values and sort methods
+            method_stats = plot_df.groupby("method")[unit_label].agg(["mean", "median"]).sort_values("mean")
+            method_order = method_stats.index
+
+            # Create boxplot with ordered methods
+            sns.boxplot(
+                data=plot_df,
+                y="method",
+                x=unit_label,
+                ax=ax,
+                orient="h",
+                order=method_order,
+                whis=100,  # extend whiskers instead of showing fliers
+            )
+
+            # Add value annotations if requested
+            if show_values:
+                # Get the maximum x-value for positioning text
+                x_max = plot_df[unit_label].max()
+
+                # Add text annotations showing median values
+                for i, method in enumerate(method_order):
+                    median_val = method_stats.loc[method, "median"]
+
+                    # Format the value appropriately
+                    if use_points_per_second:
+                        value_text = f"{median_val:.2e}"
+                    else:
+                        if median_val >= 1:
+                            value_text = f"{median_val:.3f} s"
+                        else:
+                            value_text = f"{median_val * 1000:.1f} ms"
+
+                    # Position text to the right of the plot
+                    ax.text(
+                        x_max * 1.5,
+                        i,
+                        value_text,
+                        verticalalignment="center",
+                        fontsize=9,
+                        bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8},
+                    )
+
+        # Get system info for title
+        system_info = get_system_info(data)
+        gpu_info = get_gpu_info()
+
+        # Customize the plot
+        if short_title:
+            title_lines = [
+                "Beamforming the PyMUST Rotating Disk Dataset",
+            ]
+        else:
+            title_lines = [
+                "Beamforming Performance Comparison",
+                f"PyMUST Rotating Disk Dataset "
+                f"({PYMUST_DATASET_PARAMS['n_elements']} elements, "
+                f"{PYMUST_DATASET_PARAMS['n_voxels']:,} voxels, "
+                f"{PYMUST_DATASET_PARAMS['n_frames']} frames)",
+                f"{system_info['cpu']} | {gpu_info} | {system_info['system']}",
+            ]
+        ax.set_title("\n".join(title_lines))
+
+        # Set scale (linear or log)
+        if not linear_scale:
+            ax.set_xscale("log")
+
+        # Add grid for better readability
+        ax.grid(True, alpha=0.3, axis="x")
+
+        # Extend x-axis limits if showing values to make room for text
+        if show_values and use_bar_chart:
+            # For bar chart, extend based on the rightmost annotation
+            xlim = ax.get_xlim()
+            max_x_pos = max((row["mean"] + row["std"]) for _, row in stats_df.iterrows())
+            ax.set_xlim(xlim[0], max_x_pos * 2.5)  # Give some room for annotations
+        elif show_values:
+            # Original boxplot behavior
+            xlim = ax.get_xlim()
+            ax.set_xlim(xlim[0], xlim[1] * 3)  # Extend right limit
 
     # Adjust layout
     plt.tight_layout()
@@ -315,12 +578,16 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                                    # Use latest benchmark file
+  %(prog)s                                    # Use latest benchmark file with bar chart
   %(prog)s benchmark.json                     # Use specific file
   %(prog)s --points-per-second               # Show points/sec instead of runtime
   %(prog)s --output results.png              # Save to file
   %(prog)s --group all                       # Include all benchmark groups
   %(prog)s --no-values                       # Don't show value annotations
+  %(prog)s --box-plot                        # Use box plot instead of bar chart
+  %(prog)s --short-title                     # Use abbreviated title
+  %(prog)s --linear-scale                    # Use linear scale instead of log scale
+  %(prog)s --broken-axis                     # Use broken axis for outliers (requires --linear-scale)
         """,
     )
 
@@ -340,6 +607,22 @@ Examples:
     )
 
     parser.add_argument("--no-values", action="store_true", help="Don't show value annotations on the plot")
+
+    parser.add_argument(
+        "--box-plot", action="store_true", help="Use box plot instead of bar chart (default: bar chart)"
+    )
+
+    parser.add_argument("--short-title", action="store_true", help="Use abbreviated title")
+
+    parser.add_argument(
+        "--linear-scale", action="store_true", help="Use linear scale instead of log scale (default: log scale)"
+    )
+
+    parser.add_argument(
+        "--broken-axis",
+        action="store_true",
+        help="Use broken axis for outliers (requires --linear-scale and bar chart)",
+    )
 
     args = parser.parse_args()
 
@@ -372,7 +655,17 @@ Examples:
     print_summary_stats(df, args.points_per_second)
 
     # Create plot
-    plot_benchmark_results(df, data, args.points_per_second, args.output, show_values=not args.no_values)
+    plot_benchmark_results(
+        df,
+        data,
+        args.points_per_second,
+        use_bar_chart=not args.box_plot,  # Default to bar chart unless --box-plot is specified
+        output_path=args.output,
+        show_values=not args.no_values,
+        short_title=args.short_title,
+        linear_scale=args.linear_scale,
+        broken_axis=args.broken_axis,
+    )
 
 
 if __name__ == "__main__":
