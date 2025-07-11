@@ -3,7 +3,7 @@ Plane Wave Compounding
 ===================================================
 
 This example demonstrates plane wave compounding of data from the
-PICMUS challenge (Plane-wave Imaging Challenge in Medical UltraSound). PICMUS
+PICMUS challenge (Plane-wave Imaging Challenge in Medical Ultrasound). PICMUS
 provides standardized datasets for evaluating plane wave imaging algorithms.
 
 **Example overview:**

@@ -70,7 +70,7 @@ The benchmark job in our CI pipeline ([`test_gpu.yml`](https://github.com/Forest
 
 ## CUDA Optimizations
 
-mach optimize GPU memory access patterns to improve performance. For those interested in learning more about CUDA optimization, excellent resources include:
+mach optimizes GPU memory access patterns to improve performance. For those interested in learning more about CUDA optimization, excellent resources include:
 
 - [CUDA Crash Course](https://github.com/CoffeeBeforeArch/cuda_programming/) by CoffeeBeforeArch
 - [How CUDA Programming Works](https://www.nvidia.com/en-us/on-demand/session/gtcspring22-s41487/) - CUDA Architect presentation on CUDA best-practices
@@ -180,9 +180,9 @@ python tests/plot_scaling.py --output assets/benchmark-scaling.png
 
 ![Benchmark scaling workload size](assets/benchmark-scaling.svg)
 
-*FIgure: throughput is largely consistent across dataset sizes, except for an improvement for >=16 frames.*
+*Figure: throughput is largely consistent across dataset sizes, except for a small decrease for <16 frames.*
 
-## Performance suggestions
+## Performance Suggestions
 
 For Maximum Throughput:
 

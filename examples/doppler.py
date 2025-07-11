@@ -5,7 +5,7 @@ Doppler
 This example demonstrates CUDA-accelerated ultrasound beamforming for power Doppler
 imaging using a rotating disk phantom dataset. We'll use the same dataset as the
 `PyMUST Doppler example <https://www.biomecardio.com/MUST/functions/html/iq2doppler_doc.html>`_
-and follow a similar workflow to the `ultraspy doppler tutorial <https://ultraspy.readthedocs.io/en/latest/examples/doppler.html>`_.
+and follow a similar workflow to the `ultraspy doppler tutorial`_.
 
 **Dataset Attribution:**
 The rotating disk data comes from PyMUST's example dataset [1]_, which contains ultrasound data
@@ -292,9 +292,9 @@ plt.show()
 #
 # **Expected results:**
 # The power Doppler image should show:
-# - **Bright circular region**: The rotating disk creates motion that appears bright
-# - **Dark background**: Static tissue appears dark in power Doppler
-# - **Spatial accuracy**: Disk location matches the physical phantom geometry
+# - **Bright circular region**: The rotating disk creates motion that appears bright.
+# - **Dark background**: Static tissue appears dark in power Doppler.
+# - **Spatial accuracy**: Disk location matches the physical phantom geometry.
 # - **Matches**: https://www.biomecardio.com/MUST/functions/html/iq2doppler_doc.html#7
 #
 # **Performance advantages:**
