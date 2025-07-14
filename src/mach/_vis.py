@@ -66,7 +66,7 @@ def save_debug_figures(
     reference_label: str = "Reference Implementation",
     power_mode: bool = False,
     main_cmap: Optional[str] = None,
-    diff_cmap: Optional[str] = None,
+    diff_cmap: str = "magma",
 ) -> None:
     """Save debug figures comparing beamforming results.
 
@@ -82,7 +82,7 @@ def save_debug_figures(
         reference_label: Label for reference implementation
         power_mode: If True, use 10*log10 (for power data). If False, use 20*log10 (for amplitude data).
         main_cmap: Colormap for main images. If None, defaults to 'gray' for amplitude, 'hot' for power.
-        diff_cmap: Colormap for difference image. If None, defaults to 'RdBu_r' for differences.
+        diff_cmap: Colormap for difference image
     """
     try:
         import matplotlib.pyplot as plt
@@ -93,9 +93,13 @@ def save_debug_figures(
 
     # Set default colormaps based on data type
     if main_cmap is None:
-        main_cmap = "hot" if power_mode else "gray"
-    if diff_cmap is None:
-        diff_cmap = "magma"  # Diverging colormap for differences
+        if power_mode:
+            # register colorcet colormaps
+            import colorcet as cc
+
+            main_cmap = plt.get_cmap("cet_fire")
+        else:
+            main_cmap = "gray"
 
     # Handle both 2D and 3D grids - take middle slice for 3D
     if len(grid_shape) == 3:
