@@ -331,6 +331,7 @@ def test_mach(benchmark, benchmark_data, pymust_das_matrix, output_dir):
             test_name="mach_gpu_comparison",
             our_label="mach",
             reference_label="PyMUST",
+            power_mode=True,
         )
 
     # Correctness check
@@ -421,6 +422,7 @@ def test_mach_from_cpu(benchmark, benchmark_data, pymust_das_matrix, output_dir)
             test_name="mach_cpu_comparison",
             our_label="mach (CPU→GPU)",
             reference_label="PyMUST",
+            power_mode=True,
         )
 
     # Correctness check (always performed unless --benchmark-only)

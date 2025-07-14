@@ -285,6 +285,7 @@ def test_vbeam_benchmark(benchmark, vbeam_pymust_setup, output_dir):
             output_dir=output_dir,
             test_name="vbeam_benchmark",
             our_label="vbeam",
+            power_mode=True,
         )
         print("Saved debug figures to", output_dir)
 
