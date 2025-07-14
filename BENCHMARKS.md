@@ -5,9 +5,9 @@
 ### Test Environment
 
 - **Python**: 3.11
-- **GPU**: NVIDIA GeForce RTX 4090
-- **CPU**: AMD Ryzen Threadripper PRO 7975WX 32-Cores
-- **OS**: Linux 6.12.10-76061203-generic
+- **GPU**: NVIDIA GeForce RTX 5090
+- **CPU**: Intel Core Ultra 9 285K
+- **OS**: Linux 6.11.0-29-generic
 
 ### What We Measure
 
@@ -35,10 +35,10 @@ This represents a realistic ultrafast imaging workload, although it is a small m
 
 | Implementation | Median Runtime | Points/Second | "Mach factor" |
 |---------------|----------------|---------------|----------------|
-| **mach (GPU)** | **0.3 ms** | **8.56 × 10¹¹** | **5.0×** |
+| **mach (GPU)** | **0.23 ms** | **1.13 × 10¹²** | **6.5×** |
 | Speed-of-Sound (35mm) | 1.5 ms |  | 1× |
-| vbeam (JAX/GPU) | 2.8 ms | 9.04 × 10¹⁰ | 0.5× |
-| PyMUST (CPU) | 298.4 ms | 8.64 × 10⁸ | 0.005× |
+| vbeam (JAX/GPU) | 3.6 ms | 7.2 × 10¹⁰ | 0.42× |
+| PyMUST (CPU) | 67 ms | 3.8 × 10⁹ | 0.022× |
 
 ### What does "beamforming at the speed of sound" even mean?
 
@@ -51,7 +51,7 @@ This is specific to each imaging scenario. For our benchmark with PyMUST's [rota
 - **Total for 32 frames**: 47.3 μs × 32 = **1.5 ms**
 
 mach's processing time depends on various factors (see [Computational Complexity](#computational-complexity)),
-so the "Mach 5" description is specific to this benchmark.
+so the "Mach factor" description is specific to this benchmark.
 
 ## Benchmark Reproduction
 
@@ -70,7 +70,7 @@ The benchmark job in our CI pipeline ([`test_gpu.yml`](https://github.com/Forest
 
 ## CUDA Optimizations
 
-mach optimize GPU memory access patterns to improve performance. For those interested in learning more about CUDA optimization, excellent resources include:
+mach optimizes GPU memory access patterns to improve performance. For those interested in learning more about CUDA optimization, excellent resources include:
 
 - [CUDA Crash Course](https://github.com/CoffeeBeforeArch/cuda_programming/) by CoffeeBeforeArch
 - [How CUDA Programming Works](https://www.nvidia.com/en-us/on-demand/session/gtcspring22-s41487/) - CUDA Architect presentation on CUDA best-practices
