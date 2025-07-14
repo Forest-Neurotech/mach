@@ -127,7 +127,7 @@ def save_debug_figures(
 
     if reference_result is not None:
         # Create 1x3 layout: ours, reference, difference in dB
-        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+        fig, axes = plt.subplots(1, 3, figsize=(14, 4), sharex=True, sharey=True)
 
         max_value = max(np.max(np.abs(our_img)), np.max(np.abs(ref_img)), 1e-12)
 
