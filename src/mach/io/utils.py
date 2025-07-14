@@ -179,7 +179,7 @@ def download_file(
     expected_hash: Optional[str] = None,
     digest: Union[None, str, Callable[[], "hashlib._Hash"]] = None,
     expected_size: Optional[int] = None,
-    show_progress: bool = True,
+    show_progress: bool = (tqdm is not None),
 ) -> Path:
     """Download a file from a URL with optional progress bar and integrity verification.
 
