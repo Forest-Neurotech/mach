@@ -1,4 +1,4 @@
-# mach 5 beamformer
+# mach
 
 [![PyPI](https://img.shields.io/pypi/v/mach-beamform.svg)](https://pypi.org/project/mach-beamform/)
 [![Python](https://img.shields.io/pypi/pyversions/mach-beamform.svg)](https://pypi.org/project/mach-beamform/)
