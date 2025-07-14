@@ -95,7 +95,7 @@ def save_debug_figures(
     if main_cmap is None:
         if power_mode:
             # register colorcet colormaps
-            import colorcet as cc
+            import colorcet as cc  # noqa: F401
 
             main_cmap = plt.get_cmap("cet_fire")
         else:
