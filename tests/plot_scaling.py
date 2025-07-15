@@ -228,9 +228,6 @@ def create_scaling_plots(  # noqa: C901
     all_total_points = []
     secondary_axes = []  # Store references to secondary axes
 
-    # Define colors for consistency across plots
-    colors = ["#1f77b4", "#ff7f0e", "#2ca02c"]  # Blue, Orange, Green
-
     for col, (test_type, title, x_param) in enumerate(test_types):
         data = scaling_data[test_type]
 
@@ -280,7 +277,6 @@ def create_scaling_plots(  # noqa: C901
             markersize=8,
             capsize=5,
             capthick=2,
-            color=colors[col],
         )
         axes[0, col].set_ylabel("Runtime (seconds)")
         axes[0, col].set_title(f"{title} vs Runtime")
@@ -326,7 +322,7 @@ def create_scaling_plots(  # noqa: C901
             markersize=8,
             capsize=5,
             capthick=2,
-            color=colors[col],
+            color="orange",
         )
         axes[1, col].set_ylabel("Points per Second")
         axes[1, col].set_title(f"{title} vs Throughput")
