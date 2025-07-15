@@ -175,7 +175,7 @@ To run the scaling benchmarks and then generate plots:
 make benchmark
 
 # Generate plots
-python tests/plot_scaling.py --output assets/benchmark-scaling.png
+python tests/plot_scaling.py --output assets/benchmark-scaling.svg
 ```
 
 ![Benchmark scaling workload size](assets/benchmark-scaling.svg)
