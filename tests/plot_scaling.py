@@ -305,7 +305,7 @@ def create_scaling_plots(  # noqa: C901
                     # Calculate approximate square root dimensions
                     sqrt_dim = int(np.sqrt(v))
                     param_labels.append(f"{sqrt_dim}x{sqrt_dim}")
-                ax2_top.set_xlabel("Grid Dimensions", fontsize=10)
+                ax2_top.set_xlabel("Grid Dimensions (Voxels)", fontsize=10)
             elif test_type == "elements":
                 param_labels = [f"{int(v)}" for v in x_values]
                 ax2_top.set_xlabel("Number of Receive-Elements", fontsize=10)
@@ -353,9 +353,9 @@ def create_scaling_plots(  # noqa: C901
             ax2_bottom.set_xticklabels(param_labels, rotation=45, ha="left")
 
             if test_type == "voxels":
-                ax2_bottom.set_xlabel("Grid Dimensions", fontsize=10)
+                ax2_bottom.set_xlabel("Grid Dimensions (Voxels)", fontsize=10)
             elif test_type == "elements":
-                ax2_bottom.set_xlabel("iwlements", fontsize=10)
+                ax2_bottom.set_xlabel("Number of Receive-Elements", fontsize=10)
             elif test_type == "frames":
                 ax2_bottom.set_xlabel("Number of Frames", fontsize=10)
 
