@@ -5,7 +5,7 @@ Plot performance scaling results from pytest-benchmark JSON files.
 This script creates a 2x3 subplot grid showing:
 - Top row: Runtime scaling (seconds)
 - Bottom row: Points-per-second scaling
-- Columns: Voxels, Elements, Frames
+- Columns: Voxels, Receive-Elements, Frames
 
 Usage:
     python tests/plot_scaling.py [json_file_path] [--output output.png]
@@ -176,7 +176,7 @@ def calculate_scaling_factors(benchmark_data: dict) -> dict[str, list[dict]]:  #
 def calculate_points_per_second(time_seconds: float, scaling_factor: float, test_type: str) -> float:
     """Calculate effective points per second for the given timing and scaling."""
     if test_type == "voxels":
-        # Points = elements × voxels × frames
+        # Points = receive-elements × voxels × frames
         total_points = (
             PYMUST_DATASET_PARAMS["n_elements"]
             * PYMUST_DATASET_PARAMS["n_voxels"]
@@ -184,7 +184,7 @@ def calculate_points_per_second(time_seconds: float, scaling_factor: float, test
             * PYMUST_DATASET_PARAMS["n_frames"]
         )
     elif test_type == "elements":
-        # Points = elements × voxels × frames
+        # Points = receive-elements × voxels × frames
         total_points = (
             PYMUST_DATASET_PARAMS["n_elements"]
             * scaling_factor
@@ -192,7 +192,7 @@ def calculate_points_per_second(time_seconds: float, scaling_factor: float, test
             * PYMUST_DATASET_PARAMS["n_frames"]
         )
     elif test_type == "frames":
-        # Points = elements × voxels × frames
+        # Points = receive-elements × voxels × frames
         total_points = (
             PYMUST_DATASET_PARAMS["n_elements"]
             * PYMUST_DATASET_PARAMS["n_voxels"]
@@ -220,7 +220,7 @@ def create_scaling_plots(  # noqa: C901
     # Test types and their display names
     test_types = [
         ("voxels", "Scaling Voxels", "n_voxels"),
-        ("elements", "Scaling Elements", "n_elements"),
+        ("elements", "Scaling Receive-Elements", "n_elements"),
         ("frames", "Scaling Frames", "n_frames"),
     ]
 
@@ -269,7 +269,14 @@ def create_scaling_plots(  # noqa: C901
 
         # Top row: Runtime scaling vs Total Points
         axes[0, col].errorbar(
-            total_points, y_times, yerr=y_errors, marker="o", linewidth=2, markersize=8, capsize=5, capthick=2
+            total_points,
+            y_times,
+            yerr=y_errors,
+            marker="o",
+            linewidth=2,
+            markersize=8,
+            capsize=5,
+            capthick=2,
         )
         axes[0, col].set_ylabel("Runtime (seconds)")
         axes[0, col].set_title(f"{title} vs Runtime")
@@ -294,10 +301,10 @@ def create_scaling_plots(  # noqa: C901
                     # Calculate approximate square root dimensions
                     sqrt_dim = int(np.sqrt(v))
                     param_labels.append(f"{sqrt_dim}x{sqrt_dim}")
-                ax2_top.set_xlabel("Grid Dimensions", fontsize=10)
+                ax2_top.set_xlabel("Grid Dimensions (Voxels)", fontsize=10)
             elif test_type == "elements":
                 param_labels = [f"{int(v)}" for v in x_values]
-                ax2_top.set_xlabel("Number of Elements", fontsize=10)
+                ax2_top.set_xlabel("Number of Receive-Elements", fontsize=10)
             elif test_type == "frames":
                 param_labels = [f"{int(v)}" for v in x_values]
                 ax2_top.set_xlabel("Number of Frames", fontsize=10)
@@ -342,9 +349,9 @@ def create_scaling_plots(  # noqa: C901
             ax2_bottom.set_xticklabels(param_labels, rotation=45, ha="left")
 
             if test_type == "voxels":
-                ax2_bottom.set_xlabel("Grid Dimensions", fontsize=10)
+                ax2_bottom.set_xlabel("Grid Dimensions (Voxels)", fontsize=10)
             elif test_type == "elements":
-                ax2_bottom.set_xlabel("Number of Elements", fontsize=10)
+                ax2_bottom.set_xlabel("Number of Receive-Elements", fontsize=10)
             elif test_type == "frames":
                 ax2_bottom.set_xlabel("Number of Frames", fontsize=10)
 
@@ -404,7 +411,7 @@ def create_scaling_plots(  # noqa: C901
             ax.set_xlim(x_min_padded, x_max_padded)
 
     # Set shared x-axis label for bottom row
-    fig.text(0.5, 0.02, "Total Points (elements × voxels × frames)", ha="center", fontsize=12)
+    fig.text(0.5, 0.02, "Total Points (voxels × receive-elements × frames)", ha="center", fontsize=12)
 
     # Get system info for overall title
     system_info = get_system_info(benchmark_data)
@@ -476,7 +483,9 @@ def print_scaling_summary(scaling_data: dict[str, list[dict]]) -> None:
             if test_type == "voxels":
                 print(f"  {d['resolution']:.0e} resolution: {d['n_voxels']:,} voxels → {d['mean_time'] * 1000:.1f} ms")
             elif test_type == "elements":
-                print(f"  {d['multiplier']}x elements: {d['n_elements']:,} elements → {d['mean_time'] * 1000:.1f} ms")
+                print(
+                    f"  {d['multiplier']}x receive-elements: {d['n_elements']:,} receive-elements → {d['mean_time'] * 1000:.1f} ms"
+                )
             elif test_type == "frames":
                 print(f"  {d['multiplier']}x frames: {d['n_frames']:.0f} frames → {d['mean_time'] * 1000:.1f} ms")
 
