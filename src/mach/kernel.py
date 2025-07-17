@@ -1,6 +1,6 @@
 """Python bindings and wrapper for the CUDA kernel."""
 
-from typing import Optional, cast
+from typing import Optional
 
 from array_api_compat import is_writeable_array
 from jaxtyping import Num, Real
@@ -247,4 +247,4 @@ def beamform(  # noqa: C901
         tukey_alpha=tukey_alpha,
     )
 
-    return cast(Array, out)
+    return out

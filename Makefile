@@ -55,7 +55,7 @@ check: ## Checks the code
 	@echo "🚀 Linting code: Running pre-commit"
 	@uv run pre-commit run -a
 	@echo "🚀 Type checking: Running ty"
-	@uv run ty check
+	@uv run ty check src
 
 .PHONY: test
 test: ## Runs Python tests
