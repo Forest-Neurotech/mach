@@ -27,7 +27,7 @@ def beamform(
     tx_wave_arrivals_s: Real[Array, "n_transmits n_points"],
     out: Optional[Num[Array, "n_points n_frames"]] = None,
     *,
-    rx_start_s: Real[Array, " n_transmits"],
+    rx_start_s: float,
     sampling_freq_hz: float,
     f_number: float,
     sound_speed_m_s: float,
