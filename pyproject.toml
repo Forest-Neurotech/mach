@@ -176,6 +176,8 @@ ignore = [
     "SIM108",
     # Allow assert
     "S101",
+    # Union syntax not available in Python 3.9
+    "UP007",
 ]
 
 [tool.ruff.lint.per-file-ignores]
