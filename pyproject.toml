@@ -54,6 +54,7 @@ dev = [
     "bump-my-version>=1.0.0",
     "pre-commit>=2.20.0",
     "ruff>=0.9.2",
+    "ty>=0.0.1a14",
 ]
 test = [
     "array-api-strict>=2.0.0",

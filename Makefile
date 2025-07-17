@@ -52,6 +52,8 @@ compile: check-system-dep ## Compiles the CUDA extension with nanobind
 check: ## Checks the code
 	@echo "🚀 Checking lock file consistency with 'pyproject.toml'"
 	@uv lock --locked
+	@echo "🚀 Type checking: Running ty"
+	@uv run ty check
 	@echo "🚀 Linting code: Running pre-commit"
 	@uv run pre-commit run -a
 
