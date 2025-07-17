@@ -52,6 +52,7 @@ all = [
 [dependency-groups]
 dev = [
     "bump-my-version>=1.0.0",
+    "deptry>=0.22.0",
     "pre-commit>=2.20.0",
     "ruff>=0.9.2",
 ]
@@ -113,6 +114,19 @@ docs = [
 
 [tool.uv]
 default-groups = "all"
+
+[tool.deptry]
+known_first_party = [
+    "mach",
+]
+extend_exclude = [
+    "docs"
+]
+[tool.deptry.per_rule_ignores]
+# No ignored dependencies currently
+
+[tool.deptry.package_module_name_map]
+array-api-compat = "array_api_compat"
 
 [tool.scikit-build]
 minimum-version = "build-system.requires"
