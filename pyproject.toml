@@ -44,14 +44,25 @@ uff = [
     "scipy>=1.13.1",
     "numpy>=1.25.0",
 ]
+vis = [
+    "matplotlib>=3.9.4",
+    "colorcet>=3.1.0",
+]
+examples = [
+    "pymust>=0.1.8",
+    "requests>=2.25.0",
+    "mach-beamform[vis]",
+]
 all = [
     "tqdm>=4.65.0",
-    "mach-beamform[uff]",
+    "cupy-cuda12x>=12.0.0",  # for GPU-compounding. TODO: remove this dependency in the future
+    "mach-beamform[uff,vis,examples]",
 ]
 
 [dependency-groups]
 dev = [
     "bump-my-version>=1.0.0",
+    "deptry>=0.22.0",
     "pre-commit>=2.20.0",
     "ruff>=0.9.2",
 ]
@@ -113,6 +124,17 @@ docs = [
 
 [tool.uv]
 default-groups = "all"
+
+[tool.deptry]
+known_first_party = [
+    "mach",
+]
+extend_exclude = [
+    "docs"
+]
+
+[tool.deptry.package_module_name_map]
+array-api-compat = "array_api_compat"
 
 [tool.scikit-build]
 minimum-version = "build-system.requires"

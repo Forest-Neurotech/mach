@@ -54,6 +54,8 @@ check: ## Checks the code
 	@uv lock --locked
 	@echo "🚀 Linting code: Running pre-commit"
 	@uv run pre-commit run -a
+	@echo "🚀 Checking for obsolete dependencies: Running deptry"
+	@uv run deptry .
 
 .PHONY: test
 test: ## Runs Python tests
