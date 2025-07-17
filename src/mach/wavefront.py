@@ -37,10 +37,12 @@ def plane(
     # Check that the direction is a unit vector
     if isinstance(xp, _ArrayNamespaceWithLinAlg):
         assert hasattr(xp, "linalg")
-        if not xp.abs(xp.linalg.vector_norm(direction) - 1) < 1e-6:
-            raise ValueError("direction must be a unit vector")
+        vector_norm = xp.linalg.vector_norm(direction)
     else:
-        warnings.warn(f"{xp} does not support linalg.vector_norm, assuming direction is a unit vector", stacklevel=2)
+        vector_norm = xp.sqrt(xp.sum(direction * direction, axis=-1))
+
+    if not xp.abs(vector_norm - 1) < 1e-6:
+        raise ValueError("direction must be a unit vector")
 
     diff: Real[Array, "*points 3"] = points_m - origin_m
 
@@ -92,8 +94,7 @@ def spherical(
     """
     xp = array_namespace(origin_m, points_m, focus_m)
 
-    if not isinstance(xp, _ArrayNamespaceWithLinAlg):
-        assert not hasattr(xp, "linalg")
+    if (not isinstance(xp, _ArrayNamespaceWithLinAlg)) and (not hasattr(xp, "linalg")):
         raise NotImplementedError(
             f"{xp} does not support linalg.vector_norm, please use a different array library or open a Github issue"
         )
