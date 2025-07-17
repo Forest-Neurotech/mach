@@ -93,6 +93,10 @@ def beamform(
 
     # Move the data back to the dedicated output array
     if out_orig.__dlpack_device__()[0] != DLPackDevice.CUDA:
+        import cupy as cp
+
+        assert isinstance(out, cp.ndarray), "expected allocated output array to be a cupy array"
+
         out_orig[:] = out.get()
         return out_orig
 
