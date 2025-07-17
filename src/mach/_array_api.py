@@ -60,6 +60,9 @@ class _ArrayNamespace(Protocol):
     def stack(self, arrays: Any, *, axis: int = 0) -> "Array": ...
     def zeros(self, shape: Any, *, dtype: Any = None, device: Any = None) -> "Array": ...
 
+    # TODO: Not actually part of the Array API, but supported by numpy and cupy
+    def ascontiguousarray(self, obj: Any, *, dtype: Any = None) -> "Array": ...
+
 
 @runtime_checkable
 class _ArrayNamespaceWithLinAlg(_ArrayNamespace, Protocol):
