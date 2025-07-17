@@ -23,10 +23,9 @@ import math
 import numbers
 from typing import Union
 
-from array_api_compat import array_namespace
 from jaxtyping import Real
 
-from mach._array_api import Array
+from mach._array_api import Array, array_namespace
 
 
 def ultrasound_angles_to_cartesian(

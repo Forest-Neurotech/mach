@@ -2,9 +2,9 @@
 
 import warnings
 
-from array_api_compat import array_namespace, is_cupy_array, is_numpy_array
+from array_api_compat import is_cupy_array, is_numpy_array
 
-from mach._array_api import Array
+from mach._array_api import Array, array_namespace
 
 
 def is_contiguous(array: Array) -> bool:

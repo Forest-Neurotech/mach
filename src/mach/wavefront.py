@@ -2,10 +2,9 @@
 
 import warnings
 
-from array_api_compat import array_namespace
 from jaxtyping import Real
 
-from mach._array_api import Array
+from mach._array_api import Array, array_namespace
 
 
 def plane(

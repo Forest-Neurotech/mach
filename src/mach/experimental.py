@@ -3,11 +3,10 @@
 from enum import Enum
 from typing import Optional, cast
 
-from array_api_compat import array_namespace
 from jaxtyping import Num, Real
 
 from mach import kernel
-from mach._array_api import Array
+from mach._array_api import Array, array_namespace
 
 
 class DLPackDevice(int, Enum):

@@ -1,7 +1,10 @@
 """Array-API utilities."""
 
 from enum import Enum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
+
+# Import the original array_namespace for our wrapper
+from array_api_compat import array_namespace as _array_namespace
 
 
 class DLPackDevice(int, Enum):
@@ -13,6 +16,44 @@ class DLPackDevice(int, Enum):
 
     CPU = 1
     CUDA = 2
+
+
+@runtime_checkable
+class LinAlg(Protocol):
+    """Protocol for linear algebra namespace conforming to Array API standard."""
+
+    def vector_norm(self, x: "Array", *, axis: Any = None, keepdims: bool = False, ord: Any = None) -> "Array": ...  # noqa: A002
+
+
+@runtime_checkable
+class ArrayNamespace(Protocol):
+    """Protocol for array namespaces that conform to the Array API standard.
+
+    This covers the common operations and data types used throughout the mach codebase.
+    Based on the Array API specification: https://data-apis.org/array-api/latest/
+    """
+
+    # Data types
+    float32: Any
+    complex64: Any
+    complex128: Any
+
+    # Linear algebra module
+    linalg: LinAlg
+
+    # Mathematical functions
+    def abs(self, x: "Array") -> "Array": ...
+    def cos(self, x: "Array") -> "Array": ...
+    def sign(self, x: "Array") -> "Array": ...
+    def sin(self, x: "Array") -> "Array": ...
+
+    # Array creation and manipulation
+    def asarray(self, obj: Any, *, dtype: Any = None, device: Any = None, copy: bool = False) -> "Array": ...
+    def stack(self, arrays: Any, *, axis: int = 0) -> "Array": ...
+    def zeros(self, shape: Any, *, dtype: Any = None, device: Any = None) -> "Array": ...
+
+    # Array operations
+    def vecdot(self, x1: "Array", x2: "Array", *, axis: int = -1) -> "Array": ...
 
 
 @runtime_checkable
@@ -42,3 +83,18 @@ class Array(Protocol):
 
     @property
     def T(self) -> "Array": ...
+
+
+def array_namespace(*arrays: Any) -> ArrayNamespace:
+    """Typed wrapper around array_api_compat.array_namespace.
+
+    Returns the array namespace for the given arrays with proper type hints.
+    This resolves static typing issues by providing an ArrayNamespace protocol.
+
+    Args:
+        *arrays: Arrays to get the namespace for
+
+    Returns:
+        ArrayNamespace: The appropriate array namespace (numpy, cupy, jax.numpy, etc.)
+    """
+    return cast(ArrayNamespace, _array_namespace(*arrays))

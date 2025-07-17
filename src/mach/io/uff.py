@@ -9,10 +9,9 @@ from typing import Any, Optional
 
 import einops
 import numpy as np
-from array_api_compat import array_namespace
 from scipy.signal import hilbert
 
-from mach._array_api import Array
+from mach._array_api import Array, array_namespace
 from mach.geometry import ultrasound_angles_to_cartesian
 from mach.wavefront import plane
 
