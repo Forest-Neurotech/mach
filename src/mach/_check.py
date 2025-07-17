@@ -18,8 +18,7 @@ def is_contiguous(array: Array) -> bool:
     """
     if is_cupy_array(array) or is_numpy_array(array):
         assert hasattr(array, "flags"), "numpy or cupy array should have flags"
-        # Type ignore because numpy/cupy flags objects support dict-like access but aren't Mapping types
-        assert "C_CONTIGUOUS" in array.flags, "numpy or cupy array should have C_CONTIGUOUS flag"  # type: ignore[operator]
+        # Type ignore because numpy/cupy flags objects support dict-like access
         return cast(bool, array.flags["C_CONTIGUOUS"])  # type: ignore[index]
     return True
 
