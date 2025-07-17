@@ -29,7 +29,9 @@ def extract_wave_directions(sequence: list[Any], xp) -> Array:
     """
     azimuth = xp.asarray([wave.source.azimuth for wave in sequence])
     elevation = xp.asarray([wave.source.elevation for wave in sequence])
-    return ultrasound_angles_to_cartesian(azimuth, elevation)
+    wave_directions = ultrasound_angles_to_cartesian(azimuth, elevation)
+    assert isinstance(wave_directions, Array), "wave_directions input was array, expected to be an Array"
+    return wave_directions
 
 
 def compute_tx_wave_arrivals_s(
