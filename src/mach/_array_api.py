@@ -1,10 +1,9 @@
 """Array-API utilities."""
 
 from enum import Enum
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, Protocol, Union, cast, runtime_checkable
 
-# Import the original array_namespace for our wrapper
-from array_api_compat import array_namespace as _array_namespace
+from array_api_compat import array_namespace as xpc_array_namespace
 
 
 class DLPackDevice(int, Enum):
@@ -20,17 +19,24 @@ class DLPackDevice(int, Enum):
 
 @runtime_checkable
 class LinAlg(Protocol):
-    """Protocol for linear algebra namespace conforming to Array API standard."""
+    """Protocol for linear algebra extension conforming to Array API standard.
+
+    This is an optional extension - not all array libraries implement it.
+    See: https://data-apis.org/array-api/latest/extensions/linear_algebra_functions.html
+    """
 
     def vector_norm(self, x: "Array", *, axis: Any = None, keepdims: bool = False, ord: Any = None) -> "Array": ...  # noqa: A002
 
 
 @runtime_checkable
-class ArrayNamespace(Protocol):
+class _ArrayNamespace(Protocol):
     """Protocol for array namespaces that conform to the Array API standard.
 
     This covers the common operations and data types used throughout the mach codebase.
     Based on the Array API specification: https://data-apis.org/array-api/latest/
+
+    Note: This base protocol does NOT include the optional linalg extension.
+    Use _ArrayNamespaceWithLinAlg for namespaces that have the extension.
     """
 
     # Data types
@@ -38,8 +44,10 @@ class ArrayNamespace(Protocol):
     complex64: Any
     complex128: Any
 
-    # Linear algebra module
-    linalg: LinAlg
+    # Core linear algebra functions (part of main API)
+    def matmul(self, x1: "Array", x2: "Array") -> "Array": ...
+    def tensordot(self, x1: "Array", x2: "Array", *, axes: Any = 2) -> "Array": ...
+    def vecdot(self, x1: "Array", x2: "Array", *, axis: int = -1) -> "Array": ...
 
     # Mathematical functions
     def abs(self, x: "Array") -> "Array": ...
@@ -52,8 +60,16 @@ class ArrayNamespace(Protocol):
     def stack(self, arrays: Any, *, axis: int = 0) -> "Array": ...
     def zeros(self, shape: Any, *, dtype: Any = None, device: Any = None) -> "Array": ...
 
-    # Array operations
-    def vecdot(self, x1: "Array", x2: "Array", *, axis: int = -1) -> "Array": ...
+
+@runtime_checkable
+class _ArrayNamespaceWithLinAlg(_ArrayNamespace, Protocol):
+    """Extended _ArrayNamespace protocol that includes the linear algebra extension.
+
+    Use this when you know the array namespace supports the linalg extension.
+    Most code should use the base _ArrayNamespace and check with hasattr(xp, 'linalg').
+    """
+
+    linalg: LinAlg
 
 
 @runtime_checkable
@@ -85,7 +101,7 @@ class Array(Protocol):
     def T(self) -> "Array": ...
 
 
-def array_namespace(*arrays: Any) -> ArrayNamespace:
+def array_namespace(*arrays: Any) -> Union[_ArrayNamespace, _ArrayNamespaceWithLinAlg]:
     """Typed wrapper around array_api_compat.array_namespace.
 
     Returns the array namespace for the given arrays with proper type hints.
@@ -95,6 +111,19 @@ def array_namespace(*arrays: Any) -> ArrayNamespace:
         *arrays: Arrays to get the namespace for
 
     Returns:
-        ArrayNamespace: The appropriate array namespace (numpy, cupy, jax.numpy, etc.)
+        Union[_ArrayNamespace, _ArrayNamespaceWithLinAlg]: The appropriate array namespace (numpy, cupy, jax.numpy, etc.)
+                                                          May or may not include the linalg extension.
+
+    Note:
+        The linalg extension may not be available in all array libraries.
+        Code should check for its existence using hasattr(xp, 'linalg') before use.
+
+    Examples:
+        >>> xp = array_namespace(arr)
+        >>> if hasattr(xp, 'linalg'):
+        ...     norm = xp.linalg.vector_norm(arr)
+        ... else:
+        ...     # Fallback implementation
+        ...     norm = xp.sqrt(xp.sum(arr * arr, axis=-1))
     """
-    return cast(ArrayNamespace, _array_namespace(*arrays))
+    return cast(Union[_ArrayNamespace, _ArrayNamespaceWithLinAlg], xpc_array_namespace(*arrays))

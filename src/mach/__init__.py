@@ -15,7 +15,7 @@ except PackageNotFoundError:
 
 # Import main modules to make them available as mach.module_name
 from . import geometry, kernel, wavefront
-from ._array_api import Array, ArrayNamespace
+from ._array_api import Array
 
 # Import the main beamform function to the top level for convenience
 from .kernel import beamform
@@ -23,7 +23,6 @@ from .kernel import beamform
 # Define what gets imported with "from mach import *"
 __all__ = [
     "Array",
-    "ArrayNamespace",
     "__version__",
     "beamform",
     "geometry",
