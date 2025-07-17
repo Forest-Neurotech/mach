@@ -16,6 +16,8 @@ def is_contiguous(array: Array) -> bool:
             as many libraries do not support non-contiguous arrays.
     """
     if is_cupy_array(array) or is_numpy_array(array):
+        assert hasattr(array, "flags") and isinstance(array.flags, dict), "numpy or cupy array should have flags"
+        assert "C_CONTIGUOUS" in array.flags, "numpy or cupy array should have C_CONTIGUOUS flag"
         return array.flags["C_CONTIGUOUS"]
     return True
 
