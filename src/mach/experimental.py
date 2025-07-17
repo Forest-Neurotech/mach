@@ -1,4 +1,4 @@
-"""Experimental. This API is not stable and may change."""
+"""The specific function arguments / names (API) are experimental and may change."""
 
 from enum import Enum
 from typing import Optional, cast

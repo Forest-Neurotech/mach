@@ -71,8 +71,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](https://github.com/Forest
 - ✅ Comprehensive error handling
 - ✅ PyPI packaging and distribution
 
-### Experimental features
-- Coherent compounding
+### Numerically validated, but looking for feedback on API
+- ✅ Coherent compounding
 
 ### Tentative Future Plans
 - Additional interpolation methods (spline, sinc)
