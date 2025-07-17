@@ -1,7 +1,7 @@
 """Visualization utilities for test-diagnostics."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 try:
     import matplotlib.pyplot as plt
@@ -9,6 +9,7 @@ except ImportError as err:
     raise ImportError("matplotlib is required for visualization. Install with: pip install mach-beamform[vis]") from err
 
 import numpy as np
+from matplotlib.colors import Colormap
 
 
 def db(x, power_mode=False):
@@ -42,7 +43,7 @@ def plot_slice(bm_slice, lats, deps, angle):
     fig, ax = plt.subplots(figsize=(10, 6))
     im = ax.imshow(
         bm_slice,
-        extent=[lats[0], lats[-1], deps[-1], deps[0]],
+        extent=(lats[0], lats[-1], deps[-1], deps[0]),
         aspect="equal",
         cmap="gray",
         vmin=-40,
@@ -69,7 +70,7 @@ def save_debug_figures(
     our_label: str = "Our Implementation",
     reference_label: str = "Reference Implementation",
     power_mode: bool = False,
-    main_cmap: Optional[str] = None,
+    main_cmap: Optional[Union[str, Colormap]] = None,
     diff_cmap: str = "magma",
 ) -> None:
     """Save debug figures comparing beamforming results.
@@ -122,7 +123,7 @@ def save_debug_figures(
     # Convert coordinates to centimeters for axis labels
     x_extent_cm = [x_axis.min() * 100, x_axis.max() * 100]
     z_extent_cm = [z_axis.min() * 100, z_axis.max() * 100]
-    extent = [x_extent_cm[0], x_extent_cm[1], z_extent_cm[1], z_extent_cm[0]]
+    extent = (x_extent_cm[0], x_extent_cm[1], z_extent_cm[1], z_extent_cm[0])
 
     # Adjust dynamic range based on power_mode
     vmin_main = -20 if power_mode else -40

@@ -1,7 +1,7 @@
 import contextlib
 import hashlib
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 import pytest
 from pyuff_ustb import ChannelData, Scan, Uff
@@ -124,7 +124,8 @@ def picmus_phantom_resolution_uff() -> Uff:
 @pytest.fixture(scope="session")
 def picmus_phantom_resolution_scan(picmus_phantom_resolution_uff: Uff) -> Scan:
     """Get the scan object from the UFF data."""
-    return picmus_phantom_resolution_uff.read("/scan")
+    scan: Uff = picmus_phantom_resolution_uff.read("/scan")
+    return cast(Scan, scan)
 
 
 @pytest.fixture(scope="session")

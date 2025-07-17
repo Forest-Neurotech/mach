@@ -150,7 +150,7 @@ class TestAzElToCartesian:
         result = ultrasound_angles_to_cartesian(azimuth, elevation, radius_m=radius)
 
         # Check norms
-        norms = xp.linalg.vector_norm(result, axis=-1)
+        norms = xp.sqrt(xp.sum(result * result, axis=-1))
         assert float(norms[0]) == pytest.approx(1.0, abs=1e-6)
         assert float(norms[1]) == pytest.approx(2.0, abs=1e-6)
 
@@ -270,7 +270,7 @@ class TestSphericalToCartesian:
         result = spherical_to_cartesian(theta, phi, radius_m=radius)
 
         # Check norms
-        norms = xp.linalg.vector_norm(result, axis=-1)
+        norms = xp.sqrt(xp.sum(result * result, axis=-1))
         assert float(norms[0]) == pytest.approx(1.0, abs=1e-6)
         assert float(norms[1]) == pytest.approx(2.0, abs=1e-6)
 

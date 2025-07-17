@@ -3,13 +3,28 @@
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pytest
-from pyuff_ustb import ChannelData, Scan
+from pyuff_ustb import ChannelData
+from pyuff_ustb import Scan as OriginalScan
 
 from mach._array_api import Array
 from mach._vis import db_zero, plot_slice
 from mach.experimental import beamform
 from mach.io.uff import create_beamforming_setup, create_single_transmit_beamforming_setup
+
+
+class Scan(OriginalScan):
+    """Scan with axis attributes.
+
+    These are not present in:
+    https://github.com/magnusdk/pyuff_ustb/blob/d246f08/pyuff_ustb/objects/scans/scan.py
+    but are present in the UFF files.
+    """
+
+    x_axis: np.ndarray
+    y_axis: np.ndarray
+    z_axis: np.ndarray
 
 
 @pytest.mark.filterwarnings("ignore:array is not contiguous, rearranging will add latency:UserWarning")

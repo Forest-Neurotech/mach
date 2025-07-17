@@ -23,10 +23,9 @@ import math
 import numbers
 from typing import Union
 
-from array_api_compat import array_namespace
 from jaxtyping import Real
 
-from mach._array_api import Array
+from mach._array_api import Array, _ArrayNamespace, array_namespace
 
 
 def ultrasound_angles_to_cartesian(
@@ -128,12 +127,14 @@ def spherical_to_cartesian(
     z = radius_m * xp.cos(theta_rad)
 
     result = (x, y, z)
-    if hasattr(xp, "stack"):
+    if isinstance(xp, _ArrayNamespace) or hasattr(xp, "stack"):
         result = xp.stack(result, axis=-1)
     return result
 
 
-def _prepare_inputs_and_namespace(*inputs: Union[Real[Array, "..."], float, int]) -> tuple[object, tuple]:
+def _prepare_inputs_and_namespace(
+    *inputs: Union[Real[Array, "..."], float, int],
+) -> tuple[Union[type[math], _ArrayNamespace], tuple]:
     """Prepare inputs and determine the appropriate namespace (math or array).
 
     For scalar inputs, to avoid requiring a specific array library import,

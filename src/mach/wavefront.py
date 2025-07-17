@@ -1,11 +1,8 @@
 """Convenience functions for determining the transmit-arrival distance of a wavefront."""
 
-import warnings
-
-from array_api_compat import array_namespace
 from jaxtyping import Real
 
-from mach._array_api import Array
+from mach._array_api import Array, _ArrayNamespaceWithLinAlg, array_namespace
 
 
 def plane(
@@ -36,11 +33,14 @@ def plane(
     xp = array_namespace(origin_m, points_m, direction)
 
     # Check that the direction is a unit vector
-    if hasattr(xp, "linalg"):
-        if not xp.abs(xp.linalg.vector_norm(direction) - 1) < 1e-6:
-            raise ValueError("direction must be a unit vector")
+    if isinstance(xp, _ArrayNamespaceWithLinAlg):
+        assert hasattr(xp, "linalg")
+        vector_norm = xp.linalg.vector_norm(direction)
     else:
-        warnings.warn(f"{xp} does not support linalg.vector_norm, assuming direction is a unit vector", stacklevel=2)
+        vector_norm = xp.sqrt(xp.sum(direction * direction, axis=-1))
+
+    if not xp.abs(vector_norm - 1) < 1e-6:
+        raise ValueError("direction must be a unit vector")
 
     diff: Real[Array, "*points 3"] = points_m - origin_m
 
@@ -92,16 +92,19 @@ def spherical(
     """
     xp = array_namespace(origin_m, points_m, focus_m)
 
-    if not hasattr(xp, "linalg"):
-        raise NotImplementedError(
-            f"{xp} does not support linalg.vector_norm, please use a different array library or open a Github issue"
-        )
+    if isinstance(xp, _ArrayNamespaceWithLinAlg):
+        vector_norm = xp.linalg.vector_norm
+    else:
+
+        def vector_norm(x: Array, axis: int) -> Array:
+            xp = array_namespace(x)
+            return xp.sqrt(xp.sum(x * x, axis=axis))
 
     # Distance from origin (transducer element) to focus (focal point)
-    origin_focus_dist = xp.linalg.vector_norm(origin_m - focus_m, axis=-1)
+    origin_focus_dist = vector_norm(origin_m - focus_m, axis=-1)
 
     # Distance from focus (focal point) to each point
-    focus_point_dist = xp.linalg.vector_norm(focus_m - points_m, axis=-1)
+    focus_point_dist = vector_norm(focus_m - points_m, axis=-1)
 
     # Sign convention based on z-direction (depth) for typical ultrasound coordinate system
     # Positive z typically points into the medium (increasing depth)

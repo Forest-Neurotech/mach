@@ -4,9 +4,10 @@ from typing import Any
 
 import numpy as np
 import pytest
-from array_api_compat import array_namespace, is_cupy_namespace, is_jax_namespace, is_numpy_namespace
+from array_api_compat import is_cupy_namespace, is_jax_namespace, is_numpy_namespace
 
 import mach
+from mach._array_api import array_namespace
 from mach.kernel import beamform
 
 

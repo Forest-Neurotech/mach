@@ -19,7 +19,7 @@ import hashlib
 import sys
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 try:
     import requests
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 try:
     from tqdm import tqdm
 except ImportError:
-    tqdm = None
+    tqdm: Optional[Any] = None
 
 CACHE_DIR = Path.home() / ".cache" / "mach"
 

@@ -1,11 +1,11 @@
 """Python bindings and wrapper for the CUDA kernel."""
 
-from typing import Optional, cast
+from typing import Optional
 
-from array_api_compat import array_namespace, is_writeable_array
+from array_api_compat import is_writeable_array
 from jaxtyping import Num, Real
 
-from mach._array_api import Array
+from mach._array_api import Array, array_namespace
 from mach._check import ensure_contiguous, is_contiguous
 
 # Import from the nanobind module
@@ -247,4 +247,4 @@ def beamform(  # noqa: C901
         tukey_alpha=tukey_alpha,
     )
 
-    return cast(Array, out)
+    return out

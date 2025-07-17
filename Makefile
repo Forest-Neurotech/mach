@@ -54,6 +54,8 @@ check: ## Checks the code
 	@uv lock --locked
 	@echo "🚀 Linting code: Running pre-commit"
 	@uv run pre-commit run -a
+	@echo "🚀 Type checking: Running ty"
+	@uv run ty check src
 	@echo "🚀 Checking for obsolete dependencies: Running deptry"
 	@uv run deptry .
 
@@ -61,6 +63,11 @@ check: ## Checks the code
 test: ## Runs Python tests
 	@echo "🚀 Running tests"
 	uv run --group test --group array --group compare pytest tests -v -s --benchmark-disable --save-output
+
+.PHONY: test-fail
+test-fail: ## Runs Python tests that failed, and drop into debugger on failure
+	@echo "🚀 Running tests"
+	uv run --group test --group array --group compare pytest tests -v -s --benchmark-disable --save-output --pdb --lf
 
 .PHONY: benchmark
 benchmark: ## Runs benchmarking comparisons
