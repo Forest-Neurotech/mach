@@ -16,7 +16,7 @@ from mach.geometry import ultrasound_angles_to_cartesian
 from mach.wavefront import plane
 
 
-def extract_wave_directions(sequence: list[Any], xp) -> list:
+def extract_wave_directions(sequence: list[Any], xp) -> Array:
     """
     Extract wave propagation directions from ultrasound sequence.
 
@@ -25,7 +25,7 @@ def extract_wave_directions(sequence: list[Any], xp) -> list:
         xp: Array namespace (numpy, cupy, etc.)
 
     Returns:
-        List of direction vectors as arrays
+        Array of direction vectors with shape (n_transmits, 3)
     """
     azimuth = xp.asarray([wave.source.azimuth for wave in sequence])
     elevation = xp.asarray([wave.source.elevation for wave in sequence])
@@ -81,12 +81,9 @@ def preprocess_signal(signal_data: Array, modulation_frequency: float, xp=None) 
     if xp is None:
         xp = array_namespace(signal_data)
 
-    # Convert to numpy for processing operations
-    signal = signal_data.get() if hasattr(signal_data, "get") else np.asarray(signal_data)
-
     # Apply Hilbert transform if modulation frequency is 0
     if modulation_frequency == 0:
-        signal = np.array(hilbert(signal, axis=0), dtype="complex64")
+        signal = hilbert(np.asarray(signal_data), axis=0)
 
     # Handle different input shapes
     if signal.ndim == 3:
