@@ -33,6 +33,11 @@ _[Benchmark](https://github.com/Forest-Neurotech/mach/blob/main/BENCHMARKS.md): 
 pip install mach-beamform
 ```
 
+Or: to include all optional dependencies, including to run the examples:
+```bash
+pip install mach-beamform[all]
+```
+
 Wheel prerequisites:
 * [Linux](https://github.com/pypa/manylinux)
 * CUDA-enabled GPU with driver >= 12.3, [compute-capability >= 7.5](https://developer.nvidia.com/cuda-gpus)
