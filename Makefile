@@ -64,6 +64,11 @@ test: ## Runs Python tests
 	@echo "🚀 Running tests"
 	uv run --group test --group array --group compare pytest tests -v -s --benchmark-disable --save-output
 
+.PHONY: test-fail
+test-fail: ## Runs Python tests that failed, and drop into debugger on failure
+	@echo "🚀 Running tests"
+	uv run --group test --group array --group compare pytest tests -v -s --benchmark-disable --save-output --pdb --lf
+
 .PHONY: benchmark
 benchmark: ## Runs benchmarking comparisons
 	@echo "🚀 Running benchmarking comparisons"

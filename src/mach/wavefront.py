@@ -1,7 +1,5 @@
 """Convenience functions for determining the transmit-arrival distance of a wavefront."""
 
-import warnings
-
 from jaxtyping import Real
 
 from mach._array_api import Array, _ArrayNamespaceWithLinAlg, array_namespace
@@ -94,9 +92,9 @@ def spherical(
     """
     xp = array_namespace(origin_m, points_m, focus_m)
 
-    if (not isinstance(xp, _ArrayNamespaceWithLinAlg)) and (not hasattr(xp, "linalg")):
+    if not isinstance(xp, _ArrayNamespaceWithLinAlg):
         raise NotImplementedError(
-            f"{xp} does not support linalg.vector_norm, please use a different array library or open a Github issue"
+            f"{xp} array namespace does not support linalg.vector_norm, please use a different array library or open a Github issue"
         )
 
     # Distance from origin (transducer element) to focus (focal point)
