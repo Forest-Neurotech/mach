@@ -127,7 +127,7 @@ def spherical_to_cartesian(
     z = radius_m * xp.cos(theta_rad)
 
     result = (x, y, z)
-    if isinstance(xp, _ArrayNamespace):
+    if isinstance(xp, _ArrayNamespace) or hasattr(xp, "stack"):
         result = xp.stack(result, axis=-1)
     return result
 
