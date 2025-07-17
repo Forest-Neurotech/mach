@@ -1,4 +1,4 @@
-"""Experimental. This API is not stable and may change."""
+"""The specific function arguments / names (API) are experimental and may change."""
 
 from enum import Enum
 from typing import Optional, cast
@@ -67,7 +67,12 @@ def beamform(
     # so it accumulates in place
     out_orig = out
     if out_orig.__dlpack_device__()[0] != DLPackDevice.CUDA:
-        import cupy as cp
+        try:
+            import cupy as cp
+        except ImportError as err:
+            raise ImportError(
+                "cupy is currently required to allocate a GPU-compounding output array. Install with: pip install cupy-cuda12x"
+            ) from err
 
         out = cp.zeros_like(out_orig)
 

@@ -21,7 +21,12 @@ import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
-import requests
+try:
+    import requests
+except ImportError as err:
+    raise ImportError(
+        "requests is required for file downloading. Install with: `pip install requests` or `pip install mach-beamform[examples]`"
+    ) from err
 
 if TYPE_CHECKING:
     from tqdm import tqdm

@@ -33,6 +33,11 @@ _[Benchmark](https://github.com/Forest-Neurotech/mach/blob/main/BENCHMARKS.md): 
 pip install mach-beamform
 ```
 
+Or: to include all optional dependencies, including to run the examples:
+```bash
+pip install mach-beamform[all]
+```
+
 Wheel prerequisites:
 * [Linux](https://github.com/pypa/manylinux)
 * CUDA-enabled GPU with driver >= 12.3, [compute-capability >= 7.5](https://developer.nvidia.com/cuda-gpus)
@@ -71,8 +76,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](https://github.com/Forest
 - ✅ Comprehensive error handling
 - ✅ PyPI packaging and distribution
 
-### Experimental features
-- Coherent compounding
+### Numerically validated, but looking for feedback on API
+- ✅ Coherent compounding
 
 ### Tentative Future Plans
 - Additional interpolation methods (spline, sinc)

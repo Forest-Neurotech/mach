@@ -56,6 +56,8 @@ check: ## Checks the code
 	@uv run pre-commit run -a
 	@echo "🚀 Type checking: Running ty"
 	@uv run ty check src
+	@echo "🚀 Checking for obsolete dependencies: Running deptry"
+	@uv run deptry .
 
 .PHONY: test
 test: ## Runs Python tests

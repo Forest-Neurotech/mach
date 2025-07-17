@@ -3,7 +3,11 @@
 from pathlib import Path
 from typing import Optional, Union
 
-import matplotlib.pyplot as plt
+try:
+    import matplotlib.pyplot as plt
+except ImportError as err:
+    raise ImportError("matplotlib is required for visualization. Install with: pip install mach-beamform[vis]") from err
+
 import numpy as np
 from matplotlib.colors import Colormap
 
