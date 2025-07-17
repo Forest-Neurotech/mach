@@ -35,7 +35,7 @@ def extract_wave_directions(sequence: list[Any], xp) -> Array:
 
 
 def compute_tx_wave_arrivals_s(
-    directions: list, scan_coords_m: Array, speed_of_sound: float, origin: Optional[Array] = None, xp=None
+    directions: Array, scan_coords_m: Array, speed_of_sound: float, origin: Optional[Array] = None, xp=None
 ) -> Array:
     """
     Compute transmit arrival times for plane wave imaging.
