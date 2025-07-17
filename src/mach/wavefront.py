@@ -4,7 +4,7 @@ import warnings
 
 from jaxtyping import Real
 
-from mach._array_api import Array, array_namespace
+from mach._array_api import Array, _ArrayNamespaceWithLinAlg, array_namespace
 
 
 def plane(
@@ -35,7 +35,8 @@ def plane(
     xp = array_namespace(origin_m, points_m, direction)
 
     # Check that the direction is a unit vector
-    if hasattr(xp, "linalg"):
+    if isinstance(xp, _ArrayNamespaceWithLinAlg):
+        assert hasattr(xp, "linalg")
         if not xp.abs(xp.linalg.vector_norm(direction) - 1) < 1e-6:
             raise ValueError("direction must be a unit vector")
     else:
@@ -91,7 +92,8 @@ def spherical(
     """
     xp = array_namespace(origin_m, points_m, focus_m)
 
-    if not hasattr(xp, "linalg"):
+    if not isinstance(xp, _ArrayNamespaceWithLinAlg):
+        assert not hasattr(xp, "linalg")
         raise NotImplementedError(
             f"{xp} does not support linalg.vector_norm, please use a different array library or open a Github issue"
         )
