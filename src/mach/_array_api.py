@@ -1,7 +1,7 @@
 """Array-API utilities."""
 
 from enum import Enum
-from typing import Any, Protocol, Union, cast, runtime_checkable
+from typing import Any, Optional, Protocol, Union, cast, runtime_checkable
 
 from array_api_compat import array_namespace as xpc_array_namespace
 
@@ -41,8 +41,17 @@ class _ArrayNamespace(Protocol):
 
     # Data types
     float32: Any
+    float64: Any
     complex64: Any
     complex128: Any
+    int8: Any
+    int16: Any
+    int32: Any
+    int64: Any
+    uint8: Any
+    uint16: Any
+    uint32: Any
+    uint64: Any
 
     # Core linear algebra functions (part of main API)
     def matmul(self, x1: "Array", x2: "Array") -> "Array": ...
