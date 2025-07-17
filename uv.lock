@@ -1995,12 +1995,25 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "colorcet" },
+    { name = "cupy-cuda12x" },
+    { name = "matplotlib", version = "3.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "matplotlib", version = "3.10.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "numpy", version = "2.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "pymust" },
     { name = "pyuff-ustb" },
+    { name = "requests" },
     { name = "scipy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "scipy", version = "1.15.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "tqdm" },
+]
+examples = [
+    { name = "colorcet" },
+    { name = "matplotlib", version = "3.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "matplotlib", version = "3.10.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "pymust" },
+    { name = "requests" },
 ]
 uff = [
     { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -2008,6 +2021,11 @@ uff = [
     { name = "pyuff-ustb" },
     { name = "scipy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "scipy", version = "1.15.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+vis = [
+    { name = "colorcet" },
+    { name = "matplotlib", version = "3.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "matplotlib", version = "3.10.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
 
 [package.dev-dependencies]
@@ -2101,15 +2119,21 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "array-api-compat", specifier = ">=1.11.0" },
+    { name = "colorcet", marker = "extra == 'vis'", specifier = ">=3.1.0" },
+    { name = "cupy-cuda12x", marker = "extra == 'all'", specifier = ">=12.0.0" },
     { name = "einops", specifier = ">=0.8.0" },
     { name = "jaxtyping", specifier = ">=0.2.36" },
-    { name = "mach-beamform", extras = ["uff"], marker = "extra == 'all'" },
+    { name = "mach-beamform", extras = ["uff", "vis", "examples"], marker = "extra == 'all'" },
+    { name = "mach-beamform", extras = ["vis"], marker = "extra == 'examples'" },
+    { name = "matplotlib", marker = "extra == 'vis'", specifier = ">=3.9.4" },
     { name = "numpy", marker = "extra == 'uff'", specifier = ">=1.25.0" },
+    { name = "pymust", marker = "extra == 'examples'", specifier = ">=0.1.8" },
     { name = "pyuff-ustb", marker = "extra == 'uff'", specifier = ">=0.1.0" },
+    { name = "requests", marker = "extra == 'examples'", specifier = ">=2.25.0" },
     { name = "scipy", marker = "extra == 'uff'", specifier = ">=1.13.1" },
     { name = "tqdm", marker = "extra == 'all'", specifier = ">=4.65.0" },
 ]
-provides-extras = ["uff", "all"]
+provides-extras = ["uff", "vis", "examples", "all"]
 
 [package.metadata.requires-dev]
 array = [
