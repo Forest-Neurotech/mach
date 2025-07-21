@@ -117,14 +117,14 @@ __device__ __forceinline__ DataType interpolate_nearest(
         is_valid = false;
         return DataType{};  // Return default-constructed value (won't be used)
     }
-    
+
     const unsigned int sample_idx_round = __float2uint_rn(sample_idx);  // Round to nearest
     DEBUG_ASSERT(sample_idx_round < n_samples);  // Verify sample index is in bounds
     const uint32_t channel_data_idx = receive_element_idx * n_samples * n_frames +
                                      sample_idx_round * n_frames +
                                      frame_idx;
-    DEBUG_ASSERT(channel_data_idx < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));  // Verify channel data index is in bounds  
-    
+    DEBUG_ASSERT(channel_data_idx < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));  // Verify channel data index is in bounds
+
     is_valid = true;
     return channel_data[channel_data_idx];
 }
@@ -156,24 +156,24 @@ __device__ __forceinline__ DataType interpolate_linear(
         is_valid = false;
         return DataType{};  // Return default-constructed value (won't be used)
     }
-    
+
     const unsigned int sample_idx_floor = __float2uint_rd(sample_idx);
     const unsigned int sample_idx_ceil = __float2uint_ru(sample_idx);
     const float lerp_alpha = sample_idx - (float)sample_idx_floor;
-    
+
     DEBUG_ASSERT(sample_idx_floor < n_samples);  // Verify floor sample index is in bounds
     DEBUG_ASSERT(sample_idx_ceil < n_samples);   // Verify ceil sample index is in bounds
-    
+
     const uint32_t channel_data_idx_floor = receive_element_idx * n_samples * n_frames +
                                            sample_idx_floor * n_frames +
                                            frame_idx;
     const uint32_t channel_data_idx_ceil = receive_element_idx * n_samples * n_frames +
                                           sample_idx_ceil * n_frames +
                                           frame_idx;
-    
+
     DEBUG_ASSERT(channel_data_idx_floor < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));  // Verify floor channel data index is in bounds
     DEBUG_ASSERT(channel_data_idx_ceil < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));   // Verify ceil channel data index is in bounds
-    
+
     is_valid = true;
     return lerp(channel_data[channel_data_idx_floor], channel_data[channel_data_idx_ceil], lerp_alpha);
 }
@@ -566,7 +566,7 @@ __global__ void beamformKernel(
             DataType sensor_sample = interpolate_sample<DataType, interpType>(
                 channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, n_frames, is_valid
             );
-            
+
             // Skip if sample is outside bounds
             if (!is_valid) continue;
 

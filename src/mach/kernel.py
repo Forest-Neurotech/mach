@@ -9,12 +9,14 @@ from mach._array_api import Array, array_namespace
 from mach._check import ensure_contiguous, is_contiguous
 
 # Import from the nanobind module
-from ._cuda_impl import __nvcc_version__  # type: ignore[attr-defined]  # noqa: F401
+from ._cuda_impl import (
+    InterpolationType,  # type: ignore[attr-defined]
+    __nvcc_version__,  # type: ignore[attr-defined]  # noqa: F401
+)
 from ._cuda_impl import beamform as nb_beamform  # type: ignore[attr-defined]
-from ._cuda_impl import InterpolationType  # type: ignore[attr-defined]
 
 # Export the InterpolationType enum for public use
-__all__ = ["beamform", "InterpolationType"]
+__all__ = ["InterpolationType", "beamform"]
 
 
 def beamform(  # noqa: C901
