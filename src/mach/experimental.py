@@ -3,11 +3,10 @@
 from enum import Enum
 from typing import Optional, cast
 
-from array_api_compat import array_namespace
 from jaxtyping import Num, Real
 
 from mach import kernel
-from mach._array_api import Array
+from mach._array_api import Array, array_namespace
 
 
 class DLPackDevice(int, Enum):
@@ -28,7 +27,7 @@ def beamform(
     tx_wave_arrivals_s: Real[Array, "n_transmits n_points"],
     out: Optional[Num[Array, "n_points n_frames"]] = None,
     *,
-    rx_start_s: Real[Array, " n_transmits"],
+    rx_start_s: float,
     sampling_freq_hz: float,
     f_number: float,
     sound_speed_m_s: float,
@@ -99,6 +98,10 @@ def beamform(
 
     # Move the data back to the dedicated output array
     if out_orig.__dlpack_device__()[0] != DLPackDevice.CUDA:
+        import cupy as cp
+
+        assert isinstance(out, cp.ndarray), "expected allocated output array to be a cupy array"
+
         out_orig[:] = out.get()
         return out_orig
 

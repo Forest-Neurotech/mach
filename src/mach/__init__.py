@@ -12,3 +12,20 @@ try:
 except PackageNotFoundError:
     # Update via bump-my-version, not manually
     __version__ = "0.0.4"
+
+# Import main modules to make them available as mach.module_name
+from . import geometry, kernel, wavefront
+from ._array_api import Array
+
+# Import the main beamform function to the top level for convenience
+from .kernel import beamform
+
+# Define what gets imported with "from mach import *"
+__all__ = [
+    "Array",
+    "__version__",
+    "beamform",
+    "geometry",
+    "kernel",
+    "wavefront",
+]
