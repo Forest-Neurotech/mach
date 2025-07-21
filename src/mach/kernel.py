@@ -102,8 +102,9 @@ def beamform(  # noqa: C901
             - 1.0: maximum apodization (Hann window)
         interp_type:
             Interpolation method for sensor data sampling. Options:
-            - InterpolationType.Linear: Linear interpolation (default, higher quality)
-            - InterpolationType.NearestNeighbor: Nearest neighbor (faster, lower quality)
+            - InterpolationType.NearestNeighbor: Nearest neighbor (fastest, lower quality)
+            - InterpolationType.Linear: Linear interpolation (default, good balance)
+            - InterpolationType.Quadratic: Quadratic interpolation (higher quality, slower)
 
     Returns:
         Beamformed data with shape (n_scan, nframes).
@@ -160,6 +161,19 @@ def beamform(  # noqa: C901
         ...     f_number=1.5,
         ...     sound_speed_m_s=1540,
         ...     interp_type=InterpolationType.NearestNeighbor
+        ... )
+        >>>
+        >>> # Use quadratic interpolation for highest quality
+        >>> result_hq = beamform(
+        ...     channel_data=channel_data,
+        ...     rx_coords_m=rx_positions,
+        ...     scan_coords_m=scan_points,
+        ...     tx_wave_arrivals_s=tx_arrivals,
+        ...     rx_start_s=0.0,
+        ...     sampling_freq_hz=40e6,
+        ...     f_number=1.5,
+        ...     sound_speed_m_s=1540,
+        ...     interp_type=InterpolationType.Quadratic
         ... )
     """
 
