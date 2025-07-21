@@ -89,7 +89,7 @@ mach builds upon the excellent work of the ultrasound imaging community:
 - **[PyMUST](https://github.com/creatis-ULTIM/PyMUST) / [PICMUS](https://www.creatis.insa-lyon.fr/Challenge/IEEE_IUS_2016/)** - For standardized evaluation datasets
 - **Community contributors** - Gev and Qi for CUDA optimization guidance
 
-This package was developed by the [Forest Neurotech](https://forestneurotech.org/) team, a [Focused Research Organization](https://www.convergentresearch.org/about-fros) supported by [Convergent Research](https://www.convergentresearch.org/) and generous philanthropic funders.
+This package was developed by the [Forest Neurotech](https://forestneurotech.org/) team, a [Focused Research Organization](https://www.convergentresearch.org/about-fros) supported by [Convergent Research](https://www.convergentresearch.org/) and [generous philanthropic funders](https://www.convergentresearch.org/fro-portfolio).
 
 ## Citation
 
