@@ -48,6 +48,10 @@ compile: check-system-dep ## Compiles the CUDA extension with nanobind
 	# Not sure if the pip command is also needed
 	uv pip install -ve . --no-build-isolation
 
+.PHONY: stubgen
+stubgen: ## Generates the type-hint stub file for the nanobind-CUDA module
+	uv run --group build -m nanobind.stubgen -m mach._cuda_impl -O src/mach/
+
 .PHONY: check
 check: ## Checks the code
 	@echo "🚀 Checking lock file consistency with 'pyproject.toml'"
