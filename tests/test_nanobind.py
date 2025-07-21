@@ -8,7 +8,7 @@ from array_api_compat import is_cupy_namespace, is_jax_namespace, is_numpy_names
 
 import mach
 from mach._array_api import array_namespace
-from mach.kernel import beamform
+from mach.kernel import InterpolationType, beamform
 
 
 def create_test_data(xp: Any) -> tuple[Any, Any, Any, Any, Any, int, int, int, int]:
@@ -206,14 +206,18 @@ def test_beamform_mixed_cpu_gpu_arrays(xp, test_data):
 
 
 @pytest.mark.parametrize(
-    "f_number,alpha",
-    [
-        (1.0, 0.2),
-        (2.0, 0.5),
-        (3.0, 0.8),
-    ],
+    "f_number",
+    [1.0, 3.0],
 )
-def test_beamform_parameters(xp, test_data, f_number, alpha):
+@pytest.mark.parametrize(
+    "alpha",
+    [0.0, 1.0],
+)
+@pytest.mark.parametrize(
+    "interp_type",
+    [InterpolationType.Linear, InterpolationType.NearestNeighbor],
+)
+def test_beamform_parameters(xp, test_data, f_number, alpha, interp_type):
     """Test beamforming with different parameter values."""
     _, rf_complex, coords, grid, idt_matrix, nframes, _, _, n_scan_points = test_data
 
@@ -237,6 +241,7 @@ def test_beamform_parameters(xp, test_data, f_number, alpha):
         sound_speed_m_s=1500.0,
         modulation_freq_hz=5e6,
         tukey_alpha=alpha,
+        interp_type=interp_type,
     )
 
     # Verify output shape

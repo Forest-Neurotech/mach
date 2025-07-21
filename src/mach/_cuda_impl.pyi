@@ -1,23 +1,48 @@
-"""Type stubs for the nanobind-generated _cuda_impl module."""
+import enum
+from typing import Annotated, overload
 
-from typing import Optional
+from numpy.typing import ArrayLike
 
-from mach._array_api import Array
+__nvcc_version__: str = "12.4.131"
 
-# Version information exposed by nanobind
-__nvcc_version__: str
+class InterpolationType(enum.Enum):
+    NearestNeighbor = 0
+    """Use nearest neighbor interpolation (fastest)"""
 
-# Beamforming function from nanobind
+    Linear = 1
+    """Use linear interpolation (default, higher quality)"""
+
+NearestNeighbor: InterpolationType = InterpolationType.NearestNeighbor
+
+Linear: InterpolationType = InterpolationType.Linear
+
+@overload
 def beamform(
-    channel_data: Array,
-    rx_coords_m: Array,
-    scan_coords_m: Array,
-    tx_wave_arrivals_s: Array,
-    out: Optional[Array],
+    channel_data: Annotated[ArrayLike, dict(dtype="complex64", shape=(None, None, None), order="C", writable=False)],
+    rx_coords_m: Annotated[ArrayLike, dict(dtype="float32", shape=(None, 3), order="C", writable=False)],
+    scan_coords_m: Annotated[ArrayLike, dict(dtype="float32", shape=(None, 3), order="C", writable=False)],
+    tx_wave_arrivals_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C", writable=False)],
+    out: Annotated[ArrayLike, dict(dtype="complex64", shape=(None, None), order="C")],
     f_number: float,
     rx_start_s: float,
     sampling_freq_hz: float,
     sound_speed_m_s: float,
     modulation_freq_hz: float,
     tukey_alpha: float = 0.5,
-) -> Array: ...
+    interp_type: InterpolationType = InterpolationType.Linear,
+) -> None: ...
+@overload
+def beamform(
+    channel_data: Annotated[ArrayLike, dict(dtype="float32", shape=(None, None, None), order="C", writable=False)],
+    rx_coords_m: Annotated[ArrayLike, dict(dtype="float32", shape=(None, 3), order="C", writable=False)],
+    scan_coords_m: Annotated[ArrayLike, dict(dtype="float32", shape=(None, 3), order="C", writable=False)],
+    tx_wave_arrivals_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C", writable=False)],
+    out: Annotated[ArrayLike, dict(dtype="float32", shape=(None, None), order="C")],
+    f_number: float,
+    rx_start_s: float,
+    sampling_freq_hz: float,
+    sound_speed_m_s: float,
+    modulation_freq_hz: float = 0.0,
+    tukey_alpha: float = 0.5,
+    interp_type: InterpolationType = InterpolationType.Linear,
+) -> None: ...
