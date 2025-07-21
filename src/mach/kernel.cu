@@ -19,6 +19,14 @@
 namespace nb = nanobind;
 using namespace nb::literals;
 
+/**
+ * @brief Interpolation types for sensor data sampling
+ */
+enum class InterpolationType {
+    NearestNeighbor = 0,  ///< Use nearest neighbor (no interpolation)
+    Linear = 1            ///< Use linear interpolation (default)
+};
+
 #ifdef CUDA_PROFILE
 #include <chrono>
 #include <string>
@@ -81,6 +89,124 @@ struct SectionTimer {
 #else
     #define DEBUG_ASSERT(condition) ((void)0)
 #endif
+
+/**
+ * @brief Template function for nearest neighbor interpolation with bounds checking
+ * @tparam DataType Either float or float2
+ * @param channel_data Pointer to sensor data
+ * @param sample_idx Floating point sample index
+ * @param receive_element_idx Index of receive element
+ * @param frame_idx Index of frame
+ * @param n_samples Number of samples per element
+ * @param n_frames Number of frames
+ * @param[out] is_valid Whether the sample is within bounds
+ * @return Interpolated sensor sample (undefined if is_valid is false)
+ */
+template<typename DataType>
+__device__ __forceinline__ DataType interpolate_nearest(
+    const DataType* const __restrict__ channel_data,
+    float sample_idx,
+    uint32_t receive_element_idx,
+    uint32_t frame_idx,
+    uint32_t n_samples,
+    uint32_t n_frames,
+    bool& is_valid
+) {
+    // For nearest neighbor, check if rounded sample is in bounds
+    if ((sample_idx < -0.5f) || (sample_idx > (n_samples - 0.5f))) {
+        is_valid = false;
+        return DataType{};  // Return default-constructed value (won't be used)
+    }
+    
+    const unsigned int sample_idx_round = __float2uint_rn(sample_idx);  // Round to nearest
+    DEBUG_ASSERT(sample_idx_round < n_samples);  // Verify sample index is in bounds
+    const uint32_t channel_data_idx = receive_element_idx * n_samples * n_frames +
+                                     sample_idx_round * n_frames +
+                                     frame_idx;
+    DEBUG_ASSERT(channel_data_idx < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));  // Verify channel data index is in bounds  
+    
+    is_valid = true;
+    return channel_data[channel_data_idx];
+}
+
+/**
+ * @brief Template function for linear interpolation with bounds checking
+ * @tparam DataType Either float or float2
+ * @param channel_data Pointer to sensor data
+ * @param sample_idx Floating point sample index
+ * @param receive_element_idx Index of receive element
+ * @param frame_idx Index of frame
+ * @param n_samples Number of samples per element
+ * @param n_frames Number of frames
+ * @param[out] is_valid Whether the sample is within bounds
+ * @return Interpolated sensor sample (undefined if is_valid is false)
+ */
+template<typename DataType>
+__device__ __forceinline__ DataType interpolate_linear(
+    const DataType* const __restrict__ channel_data,
+    float sample_idx,
+    uint32_t receive_element_idx,
+    uint32_t frame_idx,
+    uint32_t n_samples,
+    uint32_t n_frames,
+    bool& is_valid
+) {
+    // For linear interpolation, check if floor/ceil samples are in bounds
+    if ((sample_idx < 0.0f) || (sample_idx > (n_samples - 1))) {
+        is_valid = false;
+        return DataType{};  // Return default-constructed value (won't be used)
+    }
+    
+    const unsigned int sample_idx_floor = __float2uint_rd(sample_idx);
+    const unsigned int sample_idx_ceil = __float2uint_ru(sample_idx);
+    const float lerp_alpha = sample_idx - (float)sample_idx_floor;
+    
+    DEBUG_ASSERT(sample_idx_floor < n_samples);  // Verify floor sample index is in bounds
+    DEBUG_ASSERT(sample_idx_ceil < n_samples);   // Verify ceil sample index is in bounds
+    
+    const uint32_t channel_data_idx_floor = receive_element_idx * n_samples * n_frames +
+                                           sample_idx_floor * n_frames +
+                                           frame_idx;
+    const uint32_t channel_data_idx_ceil = receive_element_idx * n_samples * n_frames +
+                                          sample_idx_ceil * n_frames +
+                                          frame_idx;
+    
+    DEBUG_ASSERT(channel_data_idx_floor < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));  // Verify floor channel data index is in bounds
+    DEBUG_ASSERT(channel_data_idx_ceil < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));   // Verify ceil channel data index is in bounds
+    
+    is_valid = true;
+    return lerp(channel_data[channel_data_idx_floor], channel_data[channel_data_idx_ceil], lerp_alpha);
+}
+
+/**
+ * @brief Unified template function for interpolation dispatch with bounds checking
+ * @tparam DataType Either float or float2
+ * @tparam interpType Interpolation type (compile-time constant)
+ * @param channel_data Pointer to sensor data
+ * @param sample_idx Floating point sample index
+ * @param receive_element_idx Index of receive element
+ * @param frame_idx Index of frame
+ * @param n_samples Number of samples per element
+ * @param n_frames Number of frames
+ * @param[out] is_valid Whether the sample is within bounds
+ * @return Interpolated sensor sample (undefined if is_valid is false)
+ */
+template<typename DataType, InterpolationType interpType>
+__device__ __forceinline__ DataType interpolate_sample(
+    const DataType* const __restrict__ channel_data,
+    float sample_idx,
+    uint32_t receive_element_idx,
+    uint32_t frame_idx,
+    uint32_t n_samples,
+    uint32_t n_frames,
+    bool& is_valid
+) {
+    if constexpr (interpType == InterpolationType::NearestNeighbor) {
+        return interpolate_nearest<DataType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, n_frames, is_valid);
+    } else if constexpr (interpType == InterpolationType::Linear) {
+        return interpolate_linear<DataType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, n_frames, is_valid);
+    }
+}
 
 /**
  * Calculate the number of voxels to process per block based on frame count.
@@ -301,6 +427,7 @@ __device__ static inline float2 calculateTxRxDelayAndApodization(
  *
  * @tparam DataType Either float (for RF data) or float2 (for I/Q data)
  * @tparam UseApodization Whether to apply Tukey window apodization
+ * @tparam interpType Interpolation method for sensor data sampling
  * @param channel_data Input sensor data [n_receive_elements][n_samples][n_frames] (DataType)
  * @param n_frames Number of frames in channel_data (C-contiguous dimension)
  * @param n_receive_elements Number of receive elements
@@ -318,7 +445,7 @@ __device__ static inline float2 calculateTxRxDelayAndApodization(
  * @param n_output_voxels Number of output voxels
  * @param receive_elements_batch_size Number of receive elements to process per batch
  */
-template<typename DataType, bool UseApodization>
+template<typename DataType, bool UseApodization, InterpolationType interpType>
 __global__ void beamformKernel(
     const DataType* const __restrict__ channel_data,
     __grid_constant__ const uint32_t n_frames,
@@ -434,29 +561,14 @@ __global__ void beamformKernel(
             // Receive-sample-index (float, before interpolation)
             const float sample_idx = (physical_tau_s - rx_start_s) * sampling_freq_hz;
 
-            // Assume linear interpolation
-            // Skip out-of-bounds samples: floor(sample_idx) < 0 or ceil(sample_idx) >= n_samples
-            if ((sample_idx < 0.0f) || (sample_idx > (n_samples - 1))) continue;
-
-            // Assume linear interpolation
-            // We have already checked that sample_idx >= 0, so we can use unsigned int
-            const unsigned int sample_idx_floor = __float2uint_rd(sample_idx);
-            const unsigned int sample_idx_ceil = __float2uint_ru(sample_idx);
-            const float lerp_alpha = sample_idx - (float)sample_idx_floor;
-            // Note: uint32_t channel_data_idx_ceil wraps-around at at:
-            // 2**32 elements * 64bit-complex-elements = 32GB of memory
-            // using uint64_t instead is 25% slower (not sure why), so we stick with uint32_t for now
-            const uint32_t channel_data_idx_floor = receive_element_idx * n_samples * n_frames +
-                                        sample_idx_floor * n_frames +
-                                        frame_idx;
-            const uint32_t channel_data_idx_ceil = receive_element_idx * n_samples * n_frames +
-                                    sample_idx_ceil * n_frames +
-                                    frame_idx;
-            DEBUG_ASSERT(channel_data_idx_floor < n_receive_elements * n_samples * n_frames);  // Verify sensor data access is in bounds
-            DEBUG_ASSERT(channel_data_idx_ceil < n_receive_elements * n_samples * n_frames);   // Verify interpolation access is in bounds
-
-            // Handle interpolation based on data type
-            DataType sensor_sample = lerp(channel_data[channel_data_idx_floor], channel_data[channel_data_idx_ceil], lerp_alpha);
+            // Use template-based interpolation dispatch with unified bounds checking
+            bool is_valid;
+            DataType sensor_sample = interpolate_sample<DataType, interpType>(
+                channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, n_frames, is_valid
+            );
+            
+            // Skip if sample is outside bounds
+            if (!is_valid) continue;
 
             if constexpr (UseApodization) {
                 sensor_sample *= apod_weight;
@@ -522,6 +634,7 @@ __global__ void beamformKernel(
  * @param sound_speed_m_s Speed of sound in medium (meters/second)
  * @param modulation_freq_hz Modulation frequency (Hz)
  * @param tukey_alpha Tukey window alpha for apodization (0=no apodization, 1=full apodization)
+ * @param interp_type Interpolation method for sensor data sampling
  */
 template<typename DataType>
 void _beamform_impl(
@@ -539,7 +652,8 @@ void _beamform_impl(
     float sampling_freq_hz,
     float sound_speed_m_s,
     float modulation_freq_hz,
-    float tukey_alpha
+    float tukey_alpha,
+    InterpolationType interp_type
 ) {
 #ifdef CUDA_PROFILE
     TIME_FUNCTION();
@@ -627,46 +741,43 @@ void _beamform_impl(
 
     // Process all voxels with the kernel
     // We use template compile-time specialization to handle the different cases
+    // Dispatch based on apodization and interpolation type
     if (apod_flag) {
-        checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, true>, CACHE_CONFIG));
-        beamformKernel<DataType, true><<<grid, threads_per_block>>>(
-            d_channel_data,
-            n_frames,
-            n_receive_elements,
-            n_samples,
-            d_rx_coords_m,
-            d_scan_coords_m,
-            d_tx_arrivals_s,
-            d_out,
-            sampling_freq_hz,
-            inv_sound_speed_m_s,
-            modulation_freq_hz,
-            f_number,
-            tukey_alpha,
-            rx_start_s,
-            n_output_voxels,
-            receive_elements_batch_size
-        );
+        if (interp_type == InterpolationType::NearestNeighbor) {
+            checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, true, InterpolationType::NearestNeighbor>, CACHE_CONFIG));
+            beamformKernel<DataType, true, InterpolationType::NearestNeighbor><<<grid, threads_per_block>>>(
+                d_channel_data, n_frames, n_receive_elements, n_samples,
+                d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
+                sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+            );
+        } else { // Linear interpolation
+            checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, true, InterpolationType::Linear>, CACHE_CONFIG));
+            beamformKernel<DataType, true, InterpolationType::Linear><<<grid, threads_per_block>>>(
+                d_channel_data, n_frames, n_receive_elements, n_samples,
+                d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
+                sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+            );
+        }
     } else {
-        checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false>, CACHE_CONFIG));
-        beamformKernel<DataType, false><<<grid, threads_per_block>>>(
-            d_channel_data,
-            n_frames,
-            n_receive_elements,
-            n_samples,
-            d_rx_coords_m,
-            d_scan_coords_m,
-            d_tx_arrivals_s,
-            d_out,
-            sampling_freq_hz,
-            inv_sound_speed_m_s,
-            modulation_freq_hz,
-            f_number,
-            tukey_alpha,
-            rx_start_s,
-            n_output_voxels,
-            receive_elements_batch_size
-        );
+        if (interp_type == InterpolationType::NearestNeighbor) {
+            checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false, InterpolationType::NearestNeighbor>, CACHE_CONFIG));
+            beamformKernel<DataType, false, InterpolationType::NearestNeighbor><<<grid, threads_per_block>>>(
+                d_channel_data, n_frames, n_receive_elements, n_samples,
+                d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
+                sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+            );
+        } else { // Linear interpolation
+            checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false, InterpolationType::Linear>, CACHE_CONFIG));
+            beamformKernel<DataType, false, InterpolationType::Linear><<<grid, threads_per_block>>>(
+                d_channel_data, n_frames, n_receive_elements, n_samples,
+                d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
+                sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+            );
+        }
     }
     // Wait for kernel to complete
     checkCudaErrors(cudaDeviceSynchronize());
@@ -810,6 +921,7 @@ using device_unique_ptr = std::unique_ptr<
  * - Cosine apodization with adjustable taper width
  * - Support for both RF and IQ data
  * - Multi-frame processing
+ * - Configurable interpolation (nearest neighbor or linear)
  *
  *
  * @tparam DataType Either float (for RF data) or std::complex<float> (for I/Q data)
@@ -824,6 +936,7 @@ using device_unique_ptr = std::unique_ptr<
  * @param sound_speed_m_s Speed of sound in medium (meters/second)
  * @param modulation_freq_hz Modulation frequency (Hz)
  * @param tukey_alpha Tukey window alpha for apodization (0=no apodization, 1=full apodization)
+ * @param interp_type Interpolation method for sensor data sampling
  */
 template<typename DataType>
 void beamform(
@@ -837,7 +950,8 @@ void beamform(
     float sampling_freq_hz,
     float sound_speed_m_s,
     float modulation_freq_hz,
-    float tukey_alpha
+    float tukey_alpha,
+    InterpolationType interp_type
 ) {
 #ifdef CUDA_PROFILE
     TIME_FUNCTION();
@@ -871,13 +985,13 @@ void beamform(
             float2* d_out = reinterpret_cast<float2*>(out.data());
             _beamform_impl<float2>(d_channel_data, d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 n_receive_elements, n_samples, n_output_voxels, n_frames,
-                f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha);
+                f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type);
         } else if constexpr (std::is_same_v<DataType, float>) {
             const float* d_channel_data = channel_data.data();
             float* d_out = out.data();
             _beamform_impl<float>(d_channel_data, d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 n_receive_elements, n_samples, n_output_voxels, n_frames,
-                f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha);
+                f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type);
         }
         return;
     }
@@ -963,7 +1077,8 @@ void beamform(
             sampling_freq_hz,
             sound_speed_m_s,
             modulation_freq_hz,
-            tukey_alpha
+            tukey_alpha,
+            interp_type
         );
     } else if constexpr (std::is_same_v<DataType, float>) {
         _beamform_impl<float>(
@@ -981,7 +1096,8 @@ void beamform(
             sampling_freq_hz,
             sound_speed_m_s,
             modulation_freq_hz,
-            tukey_alpha
+            tukey_alpha,
+            interp_type
         );
     }
 #ifdef CUDA_PROFILE
@@ -1011,6 +1127,12 @@ NB_MODULE(_cuda_impl, m) {
     checkCudaDriverCompatibility();
     checkComputeCapability();
 
+    // Export InterpolationType enum to Python
+    nb::enum_<InterpolationType>(m, "InterpolationType")
+        .value("NearestNeighbor", InterpolationType::NearestNeighbor, "Use nearest neighbor interpolation (fastest)")
+        .value("Linear", InterpolationType::Linear, "Use linear interpolation (default, higher quality)")
+        .export_values();
+
     // Overloaded GPU beamform functions - nanobind automatically handles dispatch based on argument types
     m.def("beamform", &beamform<std::complex<float>>,
         "channel_data"_a.noconvert(),
@@ -1023,7 +1145,8 @@ NB_MODULE(_cuda_impl, m) {
         "sampling_freq_hz"_a,
         "sound_speed_m_s"_a,
         "modulation_freq_hz"_a,
-        "tukey_alpha"_a = 0.5f);
+        "tukey_alpha"_a = 0.5f,
+        "interp_type"_a = InterpolationType::Linear);
 
     m.def("beamform", &beamform<float>,
         "channel_data"_a.noconvert(),
@@ -1036,5 +1159,6 @@ NB_MODULE(_cuda_impl, m) {
         "sampling_freq_hz"_a,
         "sound_speed_m_s"_a,
         "modulation_freq_hz"_a = 0.0f,
-        "tukey_alpha"_a = 0.5f);
+        "tukey_alpha"_a = 0.5f,
+        "interp_type"_a = InterpolationType::Linear);
 }

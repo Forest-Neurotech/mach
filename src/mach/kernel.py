@@ -11,6 +11,10 @@ from mach._check import ensure_contiguous, is_contiguous
 # Import from the nanobind module
 from ._cuda_impl import __nvcc_version__  # type: ignore[attr-defined]  # noqa: F401
 from ._cuda_impl import beamform as nb_beamform  # type: ignore[attr-defined]
+from ._cuda_impl import InterpolationType  # type: ignore[attr-defined]
+
+# Export the InterpolationType enum for public use
+__all__ = ["beamform", "InterpolationType"]
 
 
 def beamform(  # noqa: C901
@@ -26,6 +30,7 @@ def beamform(  # noqa: C901
     sound_speed_m_s: float,
     modulation_freq_hz: Optional[float] = None,
     tukey_alpha: float = 0.5,
+    interp_type: InterpolationType = InterpolationType.Linear,
 ) -> Array:
     """CUDA ultrasound beamforming with automatic GPU/CPU dispatch.
 
@@ -93,6 +98,10 @@ def beamform(  # noqa: C901
             - 0.0: no apodization (rectangular window)
             - 0.5: moderate apodization (default)
             - 1.0: maximum apodization (Hann window)
+        interp_type:
+            Interpolation method for sensor data sampling. Options:
+            - InterpolationType.Linear: Linear interpolation (default, higher quality)
+            - InterpolationType.NearestNeighbor: Nearest neighbor (faster, lower quality)
 
     Returns:
         Beamformed data with shape (n_scan, nframes).
@@ -135,6 +144,20 @@ def beamform(  # noqa: C901
         ...     sampling_freq_hz=40e6,
         ...     f_number=1.5,
         ...     sound_speed_m_s=1540
+        ... )
+        >>>
+        >>> # Use nearest neighbor interpolation for faster processing
+        >>> from mach.kernel import InterpolationType
+        >>> result_fast = beamform(
+        ...     channel_data=channel_data,
+        ...     rx_coords_m=rx_positions,
+        ...     scan_coords_m=scan_points,
+        ...     tx_wave_arrivals_s=tx_arrivals,
+        ...     rx_start_s=0.0,
+        ...     sampling_freq_hz=40e6,
+        ...     f_number=1.5,
+        ...     sound_speed_m_s=1540,
+        ...     interp_type=InterpolationType.NearestNeighbor
         ... )
     """
 
@@ -245,6 +268,7 @@ def beamform(  # noqa: C901
         sound_speed_m_s=sound_speed_m_s,
         modulation_freq_hz=modulation_freq_hz,
         tukey_alpha=tukey_alpha,
+        interp_type=interp_type,
     )
 
     return out
