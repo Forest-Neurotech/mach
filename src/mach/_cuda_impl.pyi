@@ -10,11 +10,16 @@ class InterpolationType(enum.Enum):
     """Use nearest neighbor interpolation (fastest)"""
 
     Linear = 1
-    """Use linear interpolation (default, higher quality)"""
+    """Use linear interpolation (default, good balance)"""
+
+    Quadratic = 2
+    """Use quadratic interpolation (higher quality)"""
 
 NearestNeighbor: InterpolationType = InterpolationType.NearestNeighbor
 
 Linear: InterpolationType = InterpolationType.Linear
+
+Quadratic: InterpolationType = InterpolationType.Quadratic
 
 @overload
 def beamform(

@@ -29,6 +29,10 @@ We use PyMUST's [rotating-disk Doppler dataset](https://github.com/creatis-ULTIM
 
 This represents a realistic ultrafast imaging workload, although it is a small microbenchmark compared to the 3D, high-channel count datasets we're actually interested in.
 
+The benchmark scripts use the following settings:
+* linear interpolation
+* f-number: `1.0`
+
 ## Performance Results
 
 ![Benchmark Results](assets/benchmark-doppler_disk.svg)

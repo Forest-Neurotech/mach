@@ -215,7 +215,7 @@ def test_beamform_mixed_cpu_gpu_arrays(xp, test_data):
 )
 @pytest.mark.parametrize(
     "interp_type",
-    [InterpolationType.Linear, InterpolationType.NearestNeighbor],
+    [InterpolationType.Linear, InterpolationType.NearestNeighbor, InterpolationType.Quadratic],
 )
 def test_beamform_parameters(xp, test_data, f_number, alpha, interp_type):
     """Test beamforming with different parameter values."""

@@ -24,7 +24,8 @@ using namespace nb::literals;
  */
 enum class InterpolationType {
     NearestNeighbor = 0,  ///< Use nearest neighbor (no interpolation)
-    Linear = 1            ///< Use linear interpolation (default)
+    Linear = 1,           ///< Use linear interpolation (default)
+    Quadratic = 2         ///< Use quadratic interpolation
 };
 
 #ifdef CUDA_PROFILE
@@ -179,6 +180,78 @@ __device__ __forceinline__ DataType interpolate_linear(
 }
 
 /**
+ * @brief Template function for quadratic interpolation with bounds checking
+ * @tparam DataType Either float or float2
+ * @param channel_data Pointer to sensor data
+ * @param sample_idx Floating point sample index
+ * @param receive_element_idx Index of receive element
+ * @param frame_idx Index of frame
+ * @param n_samples Number of samples per element
+ * @param n_frames Number of frames
+ * @param[out] is_valid Whether the sample is within bounds
+ * @return Interpolated sensor sample (undefined if is_valid is false)
+ */
+template<typename DataType>
+__device__ __forceinline__ DataType interpolate_quadratic(
+    const DataType* const __restrict__ channel_data,
+    float sample_idx,
+    uint32_t receive_element_idx,
+    uint32_t frame_idx,
+    uint32_t n_samples,
+    uint32_t n_frames,
+    bool& is_valid
+) {
+        // For quadratic interpolation, we need 3 points centered around sample_idx
+    // Check if all 3 points are in bounds
+    if ((sample_idx < 1.0f) || (sample_idx > (n_samples - 2.0f))) {
+        is_valid = false;
+        return DataType{};  // Return default-constructed value (won't be used)
+    }
+
+    const unsigned int sample_idx_center = __float2uint_rn(sample_idx);  // Round to nearest for better symmetry
+
+        // Indices for the 3 points: (center-1), center, (center+1)
+    const unsigned int idx_neg1 = sample_idx_center - 1;  // Left point (x=-1)
+    const unsigned int idx_0 = sample_idx_center;         // Center point (x=0)
+    const unsigned int idx_1 = sample_idx_center + 1;     // Right point (x=1)
+
+    DEBUG_ASSERT(idx_neg1 < n_samples);  // Verify left point is in bounds
+    DEBUG_ASSERT(idx_0 < n_samples);     // Verify center point is in bounds
+    DEBUG_ASSERT(idx_1 < n_samples);     // Verify right point is in bounds
+
+    // Calculate channel data indices
+    const uint32_t base_idx = receive_element_idx * n_samples * n_frames + frame_idx;
+    const uint32_t channel_data_idx_neg1 = base_idx + idx_neg1 * n_frames;
+    const uint32_t channel_data_idx_0 = base_idx + idx_0 * n_frames;
+    const uint32_t channel_data_idx_1 = base_idx + idx_1 * n_frames;
+
+    DEBUG_ASSERT(channel_data_idx_neg1 < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));
+    DEBUG_ASSERT(channel_data_idx_0 < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));
+    DEBUG_ASSERT(channel_data_idx_1 < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));
+
+    // Calculate Lagrange basis weights using actual sample_idx
+    // For points at (center-1), center, (center+1), evaluating at sample_idx
+    const float x = sample_idx - (float)sample_idx_center;  // x relative to center point
+
+    // Lagrange basis polynomials:
+    // L₋₁(x) = x(x-1)/2     (for point at center-1)
+    // L₀(x) = (1-x)(1+x)    (for point at center)
+    // L₁(x) = x(x+1)/2      (for point at center+1)
+    const float w_neg1 = 0.5f * x * (x - 1.0f);      // Weight for left point (x=-1)
+    const float w_0 = (1.0f - x) * (1.0f + x);       // Weight for center point (x=0)
+    const float w_1 = 0.5f * x * (x + 1.0f);         // Weight for right point (x=1)
+
+    // Get the 3 data points
+    const DataType data_neg1 = channel_data[channel_data_idx_neg1];  // Left point (x=-1)
+    const DataType data_0 = channel_data[channel_data_idx_0];        // Center point (x=0)
+    const DataType data_1 = channel_data[channel_data_idx_1];        // Right point (x=1)
+
+    // Compute weighted sum using Lagrange basis
+    is_valid = true;
+    return w_neg1 * data_neg1 + w_0 * data_0 + w_1 * data_1;
+}
+
+/**
  * @brief Unified template function for interpolation dispatch with bounds checking
  * @tparam DataType Either float or float2
  * @tparam interpType Interpolation type (compile-time constant)
@@ -205,6 +278,8 @@ __device__ __forceinline__ DataType interpolate_sample(
         return interpolate_nearest<DataType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, n_frames, is_valid);
     } else if constexpr (interpType == InterpolationType::Linear) {
         return interpolate_linear<DataType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, n_frames, is_valid);
+    } else if constexpr (interpType == InterpolationType::Quadratic) {
+        return interpolate_quadratic<DataType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, n_frames, is_valid);
     }
 }
 
@@ -751,9 +826,17 @@ void _beamform_impl(
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
                 f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
             );
-        } else { // Linear interpolation
+        } else if (interp_type == InterpolationType::Linear) {
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, true, InterpolationType::Linear>, CACHE_CONFIG));
             beamformKernel<DataType, true, InterpolationType::Linear><<<grid, threads_per_block>>>(
+                d_channel_data, n_frames, n_receive_elements, n_samples,
+                d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
+                sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+            );
+        } else { // Quadratic interpolation
+            checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, true, InterpolationType::Quadratic>, CACHE_CONFIG));
+            beamformKernel<DataType, true, InterpolationType::Quadratic><<<grid, threads_per_block>>>(
                 d_channel_data, n_frames, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
@@ -769,9 +852,17 @@ void _beamform_impl(
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
                 f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
             );
-        } else { // Linear interpolation
+        } else if (interp_type == InterpolationType::Linear) {
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false, InterpolationType::Linear>, CACHE_CONFIG));
             beamformKernel<DataType, false, InterpolationType::Linear><<<grid, threads_per_block>>>(
+                d_channel_data, n_frames, n_receive_elements, n_samples,
+                d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
+                sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+            );
+        } else { // Quadratic interpolation
+            checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false, InterpolationType::Quadratic>, CACHE_CONFIG));
+            beamformKernel<DataType, false, InterpolationType::Quadratic><<<grid, threads_per_block>>>(
                 d_channel_data, n_frames, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
@@ -1130,7 +1221,8 @@ NB_MODULE(_cuda_impl, m) {
     // Export InterpolationType enum to Python
     nb::enum_<InterpolationType>(m, "InterpolationType")
         .value("NearestNeighbor", InterpolationType::NearestNeighbor, "Use nearest neighbor interpolation (fastest)")
-        .value("Linear", InterpolationType::Linear, "Use linear interpolation (default, higher quality)")
+        .value("Linear", InterpolationType::Linear, "Use linear interpolation (default, good balance)")
+        .value("Quadratic", InterpolationType::Quadratic, "Use quadratic interpolation (higher quality)")
         .export_values();
 
     // Overloaded GPU beamform functions - nanobind automatically handles dispatch based on argument types
