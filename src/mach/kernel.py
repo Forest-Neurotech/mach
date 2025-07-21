@@ -142,7 +142,7 @@ def beamform(  # noqa: C901
     # shape should be checked in the kernel
     if not isinstance(channel_data, Num[Array, "..."]):
         channel_data_type = type(channel_data)
-        channel_data_dtype = getattr(channel_data_type, "dtype", None)
+        channel_data_dtype = getattr(channel_data, "dtype", None)
         raise TypeError(
             f"channel_data must be array with dtype=numeric, got type={channel_data_type}, dtype={channel_data_dtype}"
         )
