@@ -75,12 +75,12 @@ We welcome contributions! Please see [CONTRIBUTING.md](https://github.com/Forest
 - ✅ Allow NumPy/CuPy/JAX/PyTorch inputs through Array API
 - ✅ Comprehensive error handling
 - ✅ PyPI packaging and distribution
+- ✅ Interpolation options: nearest, linear, and quadratic
 
 ### Numerically validated, but looking for feedback on API
 - ✅ Coherent compounding
 
 ### Tentative Future Plans
-- Additional interpolation methods (spline, sinc)
 - Additional apodization windows
 
 See the [project page](https://github.com/orgs/Forest-Neurotech/projects/14) for our up-to-date roadmap.
