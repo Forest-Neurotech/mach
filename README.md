@@ -98,14 +98,14 @@ This package was developed by the [Forest Neurotech](https://forestneurotech.org
 
 ## Citation
 
-If you use mach in your research, please cite:
+If you use mach in your research, you can cite:
 
 ```bibtex
-@software{mach,
-  title={mach: Beamforming One Trillion Points Per Second on a Consumer GPU},
+@inproceedings{mach,
+  title={Mach: Beamforming one trillion points per second on a consumer GPU},
   author={Guan, Charles and Rockhill, Alex and Pinton, Gianmarco},
-  organization={Forest Neurotech},
-  year={2025},
-  url={https://github.com/Forest-Neurotech/mach}
+  booktitle={Medical Imaging 2026: Ultrasonic Imaging and Tomography},
+  year={2026},
+  organization={SPIE},
 }
 ```
