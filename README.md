@@ -94,10 +94,12 @@ If you use mach in your research, you can cite:
 
 ```bibtex
 @inproceedings{mach,
-  title={Mach: Beamforming one trillion points per second on a consumer GPU},
+  title={{Mach: Beamforming one trillion points per second on a consumer GPU}},
   author={Guan, Charles and Rockhill, Alex and Pinton, Gianmarco},
   booktitle={Medical Imaging 2026: Ultrasonic Imaging and Tomography},
   year={2026},
-  organization={SPIE},
+  organization = {International Society for Optics and Photonics},
+  publisher = {SPIE},
+  URL={https://github.com/Forest-Neurotech/mach}
 }
 ```
