@@ -11,11 +11,6 @@ An ultrafast CUDA-accelerated ultrasound beamformer for Python users. Developed 
 
 _[Benchmark](https://github.com/Forest-Neurotech/mach/blob/main/BENCHMARKS.md): Beamforming PyMUST's [rotating-disk Doppler dataset](https://github.com/creatis-ULTIM/PyMUST/blob/170ba68/examples/rotatingDisk_real.ipynb) at 1.1 trillion points per second ([**6.5**x the speed of sound](https://github.com/Forest-Neurotech/mach/blob/main/BENCHMARKS.md))._
 
-> **⚠️ Alpha Release**
->
-> This library is currently under active development and is released as an alpha version. The primary goal of this release is to collect community feedback.
-
-
 ## Highlights
 
 * ⚡ **Ultra-fast beamforming**: ~10x faster than prior state-of-the-art
@@ -69,7 +64,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](https://github.com/Forest
 
 ## Roadmap
 
-### Alpha release (v0.0.Z)
+### Beta release (v0.Y.0)
 - ✅ Single-wave transmissions (plane wave, focused, diverging)
 - ✅ Linear interpolation beamforming
 - ✅ Allow NumPy/CuPy/JAX/PyTorch inputs through Array API
@@ -79,9 +74,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](https://github.com/Forest
 
 ### Numerically validated, but looking for feedback on API
 - ✅ Coherent compounding
-
-### Tentative Future Plans
-- Additional apodization windows
 
 See the [project page](https://github.com/orgs/Forest-Neurotech/projects/14) for our up-to-date roadmap.
 We welcome [feature requests](https://github.com/Forest-Neurotech/mach/issues)!
@@ -98,14 +90,16 @@ This package was developed by the [Forest Neurotech](https://forestneurotech.org
 
 ## Citation
 
-If you use mach in your research, please cite:
+If you use mach in your research, you can cite:
 
 ```bibtex
-@software{mach,
-  title={mach: Beamforming One Trillion Points Per Second on a Consumer GPU},
+@inproceedings{mach,
+  title={{Mach: Beamforming one trillion points per second on a consumer GPU}},
   author={Guan, Charles and Rockhill, Alex and Pinton, Gianmarco},
-  organization={Forest Neurotech},
-  year={2025},
-  url={https://github.com/Forest-Neurotech/mach}
+  booktitle={Medical Imaging 2026: Ultrasonic Imaging and Tomography},
+  year={2026},
+  organization = {International Society for Optics and Photonics},
+  publisher = {SPIE},
+  URL={https://github.com/Forest-Neurotech/mach}
 }
 ```
