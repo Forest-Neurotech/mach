@@ -47,7 +47,6 @@ jobs:
         uses: ./.github/actions/setup-cuda-python-env
         with:
           python-version: ${{ matrix.python-version }}
-          cuda-version: "12.4.0"
 
       - name: Run CUDA unit tests
         run: make test
@@ -76,7 +75,6 @@ jobs:
         uses: ./.github/actions/setup-cuda-python-env
         with:
           python-version: ${{ matrix.python-version }}
-          cuda-version: "12.4.0"
 
       - name: Run CUDA benchmark
         run: make benchmark
