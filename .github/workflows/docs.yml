@@ -58,7 +58,6 @@ jobs:
         uses: ./.github/actions/setup-cuda-python-env
         with:
           python-version: ${{ matrix.python-version }}
-          cuda-version: "12.4.0"
 
       - name: Build docs
         run: make docs
