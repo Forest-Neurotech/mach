@@ -109,4 +109,12 @@ clean: ## Cleans build artifacts
 	@echo "Cleaning build artifacts..."
 	rm -rf dist/ build/ mach.*.so
 
+.PHONY: docker-build
+docker-build: ## Builds the Docker development image
+	docker compose build
+
+.PHONY: docker-dev
+docker-dev: ## Runs the development container
+	docker compose run --rm dev
+
 .DEFAULT_GOAL := help
