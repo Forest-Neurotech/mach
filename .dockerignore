@@ -37,6 +37,3 @@ htmlcov/
 *.h5
 !ATS*
 wheelhouse/
-uv.lock
-
-

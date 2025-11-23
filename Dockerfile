@@ -34,12 +34,22 @@ ENV UV_LINK_MODE=copy
 # Set working directory
 WORKDIR /workspace
 
-# Copy project files (excluding items in .dockerignore)
+# Copy dependency files first for better layer caching
+# Dependencies only rebuild when these files change
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies with cache mount
+# This layer is cached and reused when only source code changes
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project
+
+# Copy the rest of the project
+# Source code changes won't trigger dependency reinstall
 COPY . .
 
-# Install dependencies with cache mount for faster rebuilds
+# Install the project itself (fast, no dependency downloads)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync
+    uv sync --frozen
 
 # OCI labels
 LABEL org.opencontainers.image.title="mach-beamform-dev" \
@@ -49,4 +59,3 @@ LABEL org.opencontainers.image.title="mach-beamform-dev" \
 
 # Default command: interactive bash shell
 CMD ["/bin/bash"]
-

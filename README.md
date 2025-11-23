@@ -64,7 +64,7 @@ Compile and test without installing the CUDA *toolkit* using our Docker developm
 docker compose run --rm dev
 
 # Or use make shortcuts
-make docker-build  # Build image
+make docker-build  # Build image (first time: ~2-3 min, rebuilds: ~30s)
 make docker-dev    # Run container
 ```
 
@@ -75,7 +75,7 @@ make compile  # Compile CUDA extension
 make test     # Run tests
 ```
 
-Your source code is mounted from the host, so you can edit files locally and compile in the container. Build artifacts (`.venv/` and `build/`) are stored in anonymous volumes to avoid permission issues.
+Your source code is mounted from the host, so you can edit files locally and compile in the container. Build artifacts (`.venv/` and `build/`) are stored in anonymous volumes to avoid permission issues. Dependencies are pre-installed in the image and cached, so rebuilds are fast when only source code changes.
 
 ## Examples
 
