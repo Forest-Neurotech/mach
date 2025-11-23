@@ -45,7 +45,7 @@ make compile
 Build prerequisites:
 * Linux
 * `make`
-* `uv >= 0.6.10`
+* `uv >= 0.9.7`
 * `gcc >= 8`
 * `nvcc >= 11.0`
 

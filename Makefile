@@ -26,13 +26,13 @@ check-system-dep: ## Checks if system dependencies are installed (nvcc) based on
 install-uv: ## Installs uv package manger
 	@if ! command -v uv &> /dev/null; then \
 		echo "uv not found. Installing uv..."; \
-		curl -LsSf https://astral.sh/uv/0.6.10/install.sh | sh; \
+		curl -LsSf https://astral.sh/uv/0.9.7/install.sh | sh; \
 		echo "please follow the uv suggestions to update or restart your shell environment"; \
 	fi
 	@uv_version=$$(uv --version | awk '{print $$2}'); \
-	if [ "$$(printf '%s\n' "0.6.10" "$$uv_version" | sort -V | head -n1)" != "0.6.10" ]; then \
+	if [ "$$(printf '%s\n' "0.9.7" "$$uv_version" | sort -V | head -n1)" != "0.9.7" ]; then \
 		echo "Updating uv to latest version..."; \
-		uv self update 0.6.10; \
+		uv self update 0.9.7; \
 	fi
 
 .PHONY: install-python-dep
