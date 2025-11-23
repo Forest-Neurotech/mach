@@ -17,7 +17,7 @@ maintainers = [
 ]
 readme = "README.md"
 keywords = ['beamforming', 'delay and sum', 'ultrasound', 'python', 'cuda']
-requires-python = ">=3.9,<4.0"
+requires-python = ">=3.9,<3.14"
 classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python",
