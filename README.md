@@ -49,6 +49,34 @@ Build prerequisites:
 * `gcc >= 8`
 * `nvcc >= 11.0`
 
+### Docker Development
+
+Compile and test without installing the CUDA *toolkit* using our Docker development environment.
+
+**Prerequisites:**
+* Docker Engine with [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+* CUDA-capable GPU with driver >= 12.3
+
+**Quick start:**
+
+```bash
+# Build and start development container
+docker compose run --rm dev
+
+# Or use make shortcuts
+make docker-build  # Build image
+make docker-dev    # Run container
+```
+
+**Inside the container:**
+
+```bash
+make compile  # Compile CUDA extension
+make test     # Run tests
+```
+
+Your source code is mounted from the host, so you can edit files locally and compile in the container. Build artifacts (`.venv/` and `build/`) are stored in anonymous volumes to avoid permission issues.
+
 ## Examples
 
 Try our [examples](https://forest-neurotech.github.io/mach/examples/):
