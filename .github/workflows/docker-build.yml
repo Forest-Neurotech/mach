@@ -82,8 +82,6 @@ jobs:
     name: Smoke test Docker image on GPU
     needs: build-and-push
     runs-on: linux-x64-nvidia-gpu-t4
-    # Only run when image is pushed (not on PRs) to save GPU runner time
-    if: github.event_name != 'pull_request'
     permissions:
       packages: read
     timeout-minutes: 10
