@@ -1,0 +1,39 @@
+# Build artifacts
+build/
+dist/
+*.egg-info
+**/__pycache__
+.venv/
+*.pyc
+*.so
+
+# Version control
+.git/
+.github/
+
+# Documentation
+docs/_build/
+docs/generated/
+
+# Testing output
+tests/output/
+.benchmarks/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# Environment and logs
+.env
+*.log
+.python-version
+
+# Other artifacts
+*.h5
+!ATS*
+wheelhouse/
