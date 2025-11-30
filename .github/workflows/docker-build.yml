@@ -26,6 +26,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image-tag: ${{ steps.export-tag.outputs.tag }}
 
     steps:
       - name: Free Disk Space (Ubuntu)
@@ -59,6 +61,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -67,3 +70,37 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Export image tag for smoke test
+        id: export-tag
+        run: |
+          # Get first tag from metadata output
+          TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+  smoke-test:
+    name: Smoke test Docker image on GPU
+    needs: build-and-push
+    runs-on: linux-x64-nvidia-gpu-t4
+    # Only run when image is pushed (not on PRs) to save GPU runner time
+    if: github.event_name != 'pull_request'
+    permissions:
+      packages: read
+    timeout-minutes: 10
+
+    # Run all steps inside the built Docker image
+    container:
+      image: ${{ needs.build-and-push.outputs.image-tag }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --gpus all
+
+    steps:
+      - name: Test mach import and version
+        run: |
+          python -c "import mach; print(f'✓ mach version: {mach.__version__}')"
+
+      - name: Test CUDA backend availability
+        run: |
+          python -c "import mach._cuda_impl; print('✓ CUDA backend loaded successfully')"
