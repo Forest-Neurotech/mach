@@ -30,8 +30,9 @@ if (NOT SKBUILD)
 endif()
 
 
-# search for Python >= 3.9 including the Development.Module component required by nanobind
-find_package(Python 3.9 COMPONENTS Interpreter Development.Module REQUIRED)
+# search for Python including the Development.SABIModule component for stable ABI (Python 3.12+)
+# or Development.Module for older versions
+find_package(Python 3.9 COMPONENTS Interpreter Development.SABIModule Development.Module REQUIRED)
 
 # set the build type to Release by default
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)

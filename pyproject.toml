@@ -231,8 +231,8 @@ build = [
     "cp39-manylinux_x86_64",
     "cp310-manylinux_x86_64",
     "cp311-manylinux_x86_64",
+    # Build stable ABI wheel for Python 3.12+ (works for 3.12, 3.13, and future versions)
     "cp312-manylinux_x86_64",
-    "cp313-manylinux_x86_64",
 ]
 # we don't use build-isolation, so we need to install
 # build-requires explicitly.
