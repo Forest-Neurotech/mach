@@ -27,7 +27,7 @@ jobs:
   test-gpu:
     strategy:
       matrix:
-        python-version: ["3.11"]
+        python-version: ["3.11", "3.13"]
         os: ["linux-x64-nvidia-gpu-t4"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
