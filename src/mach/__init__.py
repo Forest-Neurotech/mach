@@ -11,7 +11,7 @@ try:
     __version__ = version("mach")
 except PackageNotFoundError:
     # Update via bump-my-version, not manually
-    __version__ = "0.1.0"
+    __version__ = "0.1.1"
 
 # Import main modules to make them available as mach.module_name
 from . import geometry, kernel, wavefront
