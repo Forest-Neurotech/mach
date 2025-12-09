@@ -8,7 +8,8 @@ Usage:
     pytest tests/test_pymust.py --benchmark-histogram --benchmark-sort=mean
 """
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pytest

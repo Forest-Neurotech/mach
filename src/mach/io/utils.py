@@ -1,7 +1,7 @@
 """General utilities for downloading and caching files with integrity verification.
 
 This module provides:
-- Efficient file hashing compatible with Python 3.9+ (backport of hashlib.file_digest)
+- Efficient file hashing compatible with Python 3.10 (backport of hashlib.file_digest)
 - Robust file downloading with progress bars and integrity verification
 - Smart caching with automatic re-download on corruption
 - Support for multiple hash algorithms (SHA1, SHA256, MD5, etc.)
@@ -18,8 +18,9 @@ Optional dependencies:
 import hashlib
 import sys
 import warnings
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 try:
     import requests
@@ -34,16 +35,16 @@ if TYPE_CHECKING:
 try:
     from tqdm import tqdm
 except ImportError:
-    tqdm: Optional[Any] = None
+    tqdm: Any | None = None
 
 CACHE_DIR = Path.home() / ".cache" / "mach"
 
 
-def file_digest(fileobj, digest: Union[str, Callable[[], "hashlib._Hash"]]) -> "hashlib._Hash":
+def file_digest(fileobj, digest: str | Callable[[], "hashlib._Hash"]) -> "hashlib._Hash":
     """Return a digest object that has been updated with contents of file object.
 
     This is a backport-compatible implementation of hashlib.file_digest()
-    that works with Python 3.9+ and follows the same API as Python 3.11+.
+    that works with Python 3.10 and follows the same API as Python 3.11+.
 
     Args:
         fileobj: File-like object opened for reading in binary mode
@@ -91,7 +92,7 @@ def file_digest(fileobj, digest: Union[str, Callable[[], "hashlib._Hash"]]) -> "
 def verify_file_integrity(
     file_path: Path,
     expected_hash: str,
-    digest: Union[str, Callable[[], "hashlib._Hash"]],
+    digest: str | Callable[[], "hashlib._Hash"],
 ) -> bool:
     """Verify file integrity using specified hash algorithm.
 
@@ -114,9 +115,9 @@ def verify_file_integrity(
 
 def _verify_file(
     output_path: Path,
-    expected_size: Optional[int],
-    expected_hash: Optional[str],
-    digest: Optional[Union[str, Callable[[], "hashlib._Hash"]]],
+    expected_size: int | None,
+    expected_hash: str | None,
+    digest: str | Callable[[], "hashlib._Hash"] | None,
 ) -> bool:
     """Verify if existing file meets size and hash requirements.
 
@@ -176,14 +177,14 @@ def _download_with_progress(
 
 def download_file(
     url: str,
-    output_path: Union[str, Path],
+    output_path: str | Path,
     timeout: int = 30,
     chunk_size: int = 1024 * 1024,  # 1MB
     *,
     overwrite: bool = False,
-    expected_hash: Optional[str] = None,
-    digest: Union[None, str, Callable[[], "hashlib._Hash"]] = None,
-    expected_size: Optional[int] = None,
+    expected_hash: str | None = None,
+    digest: None | str | Callable[[], "hashlib._Hash"] = None,
+    expected_size: int | None = None,
     show_progress: bool = (tqdm is not None),
 ) -> Path:
     """Download a file from a URL with optional progress bar and integrity verification.
@@ -240,14 +241,14 @@ def download_file(
 
 def cached_download(
     url: str,
-    cache_dir: Union[str, Path] = CACHE_DIR,
-    filename: Optional[Union[str, Path]] = None,
+    cache_dir: str | Path = CACHE_DIR,
+    filename: str | Path | None = None,
     timeout: int = 30,
     *,
     overwrite: bool = False,
-    expected_size: Optional[int] = None,
-    expected_hash: Optional[str] = None,
-    digest: Union[None, str, Callable[[], "hashlib._Hash"]] = None,
+    expected_size: int | None = None,
+    expected_hash: str | None = None,
+    digest: None | str | Callable[[], "hashlib._Hash"] = None,
     show_progress: bool = (tqdm is not None),
 ) -> Path:
     """Download a file and cache it with optional integrity verification.

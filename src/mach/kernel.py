@@ -1,7 +1,5 @@
 """Python bindings and wrapper for the CUDA kernel."""
 
-from typing import Optional
-
 from array_api_compat import is_writeable_array
 from jaxtyping import Num, Real
 
@@ -24,13 +22,13 @@ def beamform(  # noqa: C901
     rx_coords_m: Real[Array, "n_rx xyz=3"],
     scan_coords_m: Real[Array, "n_scan xyz=3"],
     tx_wave_arrivals_s: Real[Array, " n_scan"],
-    out: Optional[Num[Array, "n_scan n_frames"]] = None,
+    out: Num[Array, "n_scan n_frames"] | None = None,
     *,
     rx_start_s: float,
     sampling_freq_hz: float,
     f_number: float,
     sound_speed_m_s: float,
-    modulation_freq_hz: Optional[float] = None,
+    modulation_freq_hz: float | None = None,
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
 ) -> Array:

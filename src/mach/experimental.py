@@ -1,7 +1,7 @@
 """The specific function arguments / names (API) are experimental and may change."""
 
 from enum import Enum
-from typing import Optional, cast
+from typing import cast
 
 from jaxtyping import Num, Real
 
@@ -25,13 +25,13 @@ def beamform(
     rx_coords_m: Real[Array, "n_rx xyz=3"],
     scan_coords_m: Real[Array, "n_points xyz=3"],
     tx_wave_arrivals_s: Real[Array, "n_transmits n_points"],
-    out: Optional[Num[Array, "n_points n_frames"]] = None,
+    out: Num[Array, "n_points n_frames"] | None = None,
     *,
     rx_start_s: float,
     sampling_freq_hz: float,
     f_number: float,
     sound_speed_m_s: float,
-    modulation_freq_hz: Optional[float] = None,
+    modulation_freq_hz: float | None = None,
     tukey_alpha: float = 0.5,
 ) -> Num[Array, "n_points n_frames"]:
     """Wrapper around kernel.beamform that includes coherent compounding.

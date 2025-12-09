@@ -5,7 +5,7 @@ Usage: pass in a scan-object from:
 https://github.com/magnusdk/pyuff_ustb
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import einops
 import numpy as np
@@ -35,7 +35,7 @@ def extract_wave_directions(sequence: list[Any], xp) -> Array:
 
 
 def compute_tx_wave_arrivals_s(
-    directions: Array, scan_coords_m: Array, speed_of_sound: float, origin: Optional[Array] = None, xp=None
+    directions: Array, scan_coords_m: Array, speed_of_sound: float, origin: Array | None = None, xp=None
 ) -> Array:
     """
     Compute transmit arrival times for plane wave imaging.
