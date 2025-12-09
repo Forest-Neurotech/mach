@@ -1,7 +1,6 @@
 """Test the UFF data loader."""
 
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pytest
@@ -31,7 +30,7 @@ class Scan(OriginalScan):
 def test_picmus_phantom_resolution(
     picmus_phantom_resolution_channel_data: ChannelData,
     picmus_phantom_resolution_scan: Scan,
-    output_dir: Optional[Path],
+    output_dir: Path | None,
 ):
     """Test the Picmus phantom resolution UFF data."""
     assert picmus_phantom_resolution_channel_data is not None
@@ -63,7 +62,7 @@ def test_picmus_phantom_resolution(
 def test_picmus_phantom_resolution_single_transmit(
     picmus_phantom_resolution_channel_data: ChannelData,
     picmus_phantom_resolution_scan: Scan,
-    output_dir: Optional[Path],
+    output_dir: Path | None,
 ):
     """Test the Picmus phantom resolution UFF data with single transmit (backwards compatibility)."""
     assert picmus_phantom_resolution_channel_data is not None

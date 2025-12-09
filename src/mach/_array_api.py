@@ -1,7 +1,7 @@
 """Array-API utilities."""
 
 from enum import Enum
-from typing import Any, Protocol, Union, cast, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from array_api_compat import array_namespace as xpc_array_namespace
 
@@ -112,7 +112,7 @@ class Array(Protocol):
     def __getitem__(self, key: Any) -> "Array": ...
 
 
-def array_namespace(*arrays: Any) -> Union[_ArrayNamespace, _ArrayNamespaceWithLinAlg]:
+def array_namespace(*arrays: Any) -> _ArrayNamespace | _ArrayNamespaceWithLinAlg:
     """Typed wrapper around array_api_compat.array_namespace.
 
     Returns the array namespace for the given arrays with proper type hints.
@@ -137,4 +137,4 @@ def array_namespace(*arrays: Any) -> Union[_ArrayNamespace, _ArrayNamespaceWithL
         ...     # Fallback implementation
         ...     norm = xp.sqrt(xp.sum(arr * arr, axis=-1))
     """
-    return cast(Union[_ArrayNamespace, _ArrayNamespaceWithLinAlg], xpc_array_namespace(*arrays))
+    return cast(_ArrayNamespace | _ArrayNamespaceWithLinAlg, xpc_array_namespace(*arrays))

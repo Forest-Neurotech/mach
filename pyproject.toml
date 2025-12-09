@@ -17,12 +17,11 @@ maintainers = [
 ]
 readme = "README.md"
 keywords = ['beamforming', 'delay and sum', 'ultrasound', 'python', 'cuda']
-requires-python = ">=3.9,<3.14"
+requires-python = ">=3.10,<3.14"
 classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -146,7 +145,7 @@ build-dir = "build/{wheel_tag}"
 wheel.packages = ["src/mach"]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 120
 fix = true
 
@@ -196,8 +195,6 @@ ignore = [
     "SIM108",
     # Allow assert
     "S101",
-    # Union syntax not available in Python 3.9
-    "UP007",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -226,7 +223,6 @@ testpaths = ["tests"]
 
 [tool.cibuildwheel]
 build = [
-    "cp39-manylinux_x86_64",
     "cp310-manylinux_x86_64",
     "cp311-manylinux_x86_64",
     "cp312-manylinux_x86_64",

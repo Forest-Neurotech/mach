@@ -1,7 +1,6 @@
 """Visualization utilities for test-diagnostics."""
 
 from pathlib import Path
-from typing import Optional, Union
 
 try:
     import matplotlib.pyplot as plt
@@ -61,7 +60,7 @@ def plot_slice(bm_slice, lats, deps, angle):
 
 def save_debug_figures(
     our_result: np.ndarray,
-    reference_result: Optional[np.ndarray],
+    reference_result: np.ndarray | None,
     grid_shape: tuple[int, ...],
     x_axis: np.ndarray,
     z_axis: np.ndarray,
@@ -70,7 +69,7 @@ def save_debug_figures(
     our_label: str = "Our Implementation",
     reference_label: str = "Reference Implementation",
     power_mode: bool = False,
-    main_cmap: Optional[Union[str, Colormap]] = None,
+    main_cmap: str | Colormap | None = None,
     diff_cmap: str = "magma",
 ) -> None:
     """Save debug figures comparing beamforming results.

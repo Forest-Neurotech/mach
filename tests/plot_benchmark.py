@@ -14,7 +14,6 @@ If no JSON file path is provided, uses the most recent file from .benchmarks/**/
 import argparse
 import json
 from pathlib import Path
-from typing import Optional
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -152,7 +151,7 @@ def plot_benchmark_results(
     df: pd.DataFrame,
     data: dict,
     use_points_per_second: bool = False,
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
     show_values: bool = True,
 ) -> None:
     """Create horizontal boxplot of benchmark results."""

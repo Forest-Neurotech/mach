@@ -17,7 +17,6 @@ import argparse
 import json
 import re
 from pathlib import Path
-from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -206,7 +205,7 @@ def calculate_points_per_second(time_seconds: float, scaling_factor: float, test
 
 
 def create_scaling_plots(  # noqa: C901
-    scaling_data: dict[str, list[dict]], benchmark_data: dict, output_path: Optional[str] = None
+    scaling_data: dict[str, list[dict]], benchmark_data: dict, output_path: str | None = None
 ) -> None:
     """Create 2x3 subplot grid showing scaling performance with shared x-axis."""
 

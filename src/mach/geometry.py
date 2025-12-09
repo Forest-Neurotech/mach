@@ -21,7 +21,6 @@ For convenience, we also provide spherical angle conversions following the physi
 
 import math
 import numbers
-from typing import Union
 
 from jaxtyping import Real
 
@@ -29,10 +28,10 @@ from mach._array_api import Array, _ArrayNamespace, array_namespace
 
 
 def ultrasound_angles_to_cartesian(
-    azimuth_rad: Union[Real[Array, " *angles"], float, int],
-    elevation_rad: Union[Real[Array, " *angles"], float, int],
-    radius_m: Union[Real[Array, " *angles"], float, int] = 1,
-) -> Union[Real[Array, "*angles xyz=3"], tuple[float, float, float]]:
+    azimuth_rad: Real[Array, " *angles"] | float | int,
+    elevation_rad: Real[Array, " *angles"] | float | int,
+    radius_m: Real[Array, " *angles"] | float | int = 1,
+) -> Real[Array, "*angles xyz=3"] | tuple[float, float, float]:
     """Convert ultrasound angles (azimuth, elevation, radius) to Cartesian coordinates.
 
     The resulting vectors can be used directly with `mach.wavefront.plane()`.
@@ -87,10 +86,10 @@ def ultrasound_angles_to_cartesian(
 
 
 def spherical_to_cartesian(
-    theta_rad: Union[Real[Array, " *angles"], float, int],
-    phi_rad: Union[Real[Array, " *angles"], float, int],
-    radius_m: Union[Real[Array, " *angles"], float, int] = 1,
-) -> Union[Real[Array, "*angles xyz=3"], tuple[float, float, float]]:
+    theta_rad: Real[Array, " *angles"] | float | int,
+    phi_rad: Real[Array, " *angles"] | float | int,
+    radius_m: Real[Array, " *angles"] | float | int = 1,
+) -> Real[Array, "*angles xyz=3"] | tuple[float, float, float]:
     """Convert standard spherical angle convention to a Cartesian vector.
 
     Uses the physics convention as defined in ISO 80000-2:2019.
@@ -133,8 +132,8 @@ def spherical_to_cartesian(
 
 
 def _prepare_inputs_and_namespace(
-    *inputs: Union[Real[Array, "..."], float, int],
-) -> tuple[Union[type[math], _ArrayNamespace], tuple]:
+    *inputs: Real[Array, "..."] | float | int,
+) -> tuple[type[math] | _ArrayNamespace, tuple]:
     """Prepare inputs and determine the appropriate namespace (math or array).
 
     For scalar inputs, to avoid requiring a specific array library import,

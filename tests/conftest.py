@@ -1,7 +1,7 @@
 import contextlib
 import hashlib
 from pathlib import Path
-from typing import Optional, cast
+from typing import cast
 
 import pytest
 from pyuff_ustb import ChannelData, Scan, Uff
@@ -79,7 +79,7 @@ def test_data_dir():
 
 
 @pytest.fixture
-def output_dir(request) -> Optional[Path]:
+def output_dir(request) -> Path | None:
     """Output directory for test results.
 
     Returns None if the --save-output flag is not set.
