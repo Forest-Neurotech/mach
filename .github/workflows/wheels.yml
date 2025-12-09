@@ -72,7 +72,9 @@ jobs:
         path: wheelhouse
 
     - name: Install wheel
-      run: pip install wheelhouse/mach_beamform-*.whl
+      run: |
+        PYTHON_VERSION_NO_DOT=$(echo "${{ matrix.python-version }}" | tr -d '.')
+        pip install wheelhouse/mach_beamform-*-cp${PYTHON_VERSION_NO_DOT}-*.whl
 
     - name: Test import mach
       run: python -c 'import mach; print(mach.__version__)'

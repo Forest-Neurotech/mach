@@ -32,6 +32,9 @@ dependencies = [
     "array-api-compat>=1.11.0",
     "einops>=0.8.0",
     "jaxtyping>=0.2.36",
+    # TODO: remove numpy dependency once jaxtyping no longer implicitly depends on numpy
+    # https://github.com/patrick-kidger/jaxtyping/issues/360
+    "numpy>=1.25.0",
 ]
 
 [project.urls]

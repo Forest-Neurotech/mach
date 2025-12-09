@@ -1462,6 +1462,7 @@ dependencies = [
     { name = "array-api-compat" },
     { name = "einops" },
     { name = "jaxtyping" },
+    { name = "numpy" },
 ]
 
 [package.optional-dependencies]
@@ -1575,6 +1576,7 @@ requires-dist = [
     { name = "mach-beamform", extras = ["uff", "vis", "examples"], marker = "extra == 'all'" },
     { name = "mach-beamform", extras = ["vis"], marker = "extra == 'examples'" },
     { name = "matplotlib", marker = "extra == 'vis'", specifier = ">=3.9.4" },
+    { name = "numpy", specifier = ">=1.25.0" },
     { name = "numpy", marker = "extra == 'uff'", specifier = ">=1.25.0" },
     { name = "pymust", marker = "extra == 'examples'", specifier = ">=0.1.8" },
     { name = "pyuff-ustb", marker = "extra == 'uff'", specifier = ">=0.1.0" },
