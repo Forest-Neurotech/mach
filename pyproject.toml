@@ -142,8 +142,6 @@ minimum-version = "build-system.requires"
 build-dir = "build/{wheel_tag}"
 # Rebuild the project when the package is imported?
 # editable.rebuild = true
-# Build stable ABI wheels for CPython 3.12+
-wheel.py-api = "cp312"
 # Explicitly include Python packages from src/
 wheel.packages = ["src/mach"]
 
