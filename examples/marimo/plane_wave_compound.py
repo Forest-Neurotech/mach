@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "marimo",
+#     "pyzmq",
+# ]
+# ///
+
 import marimo
 
 __generated_with = "0.18.4"
@@ -90,7 +98,7 @@ def _(cached_download, hashlib):
 
 
 @app.cell
-def _(Uff, np, uff_path):
+def _(Uff, uff_path):
     # Load UFF data structure
     uff_file = Uff(str(uff_path))
     channel_data = uff_file.read("/channel_data")

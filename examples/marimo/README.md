@@ -1,3 +1,8 @@
+---
+title: Readme
+marimo-version: 0.18.4
+---
+
 ## marimo example
 
 This folder contains interactive examples that can be run with [marimo](https://docs.marimo.io/), an open-source reactive Python notebook.
