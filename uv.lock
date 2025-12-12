@@ -1626,6 +1626,7 @@ dev = [
 ]
 docs = [
     { name = "ipykernel" },
+    { name = "marimo" },
     { name = "matplotlib" },
     { name = "myst-parser" },
     { name = "numpy" },
@@ -1720,6 +1721,7 @@ dev = [
 ]
 docs = [
     { name = "ipykernel", specifier = ">=6.10" },
+    { name = "marimo", specifier = ">=0.18.4" },
     { name = "matplotlib", specifier = ">=3.9.4" },
     { name = "myst-parser", specifier = ">=3.0.1" },
     { name = "numpy", specifier = ">=2.0.2" },

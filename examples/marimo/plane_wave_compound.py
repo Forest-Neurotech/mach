@@ -30,8 +30,6 @@ def _(mo):
     - **Dynamic Range**: Optimize display contrast
 
     ---
-
-    _Dataset from [PICMUS challenge](https://www.creatis.insa-lyon.fr/Challenge/IEEE_IUS_2016/)._
     """)
     return
 
@@ -97,8 +95,7 @@ def _(Uff, np, uff_path):
     uff_file = Uff(str(uff_path))
     channel_data = uff_file.read("/channel_data")
     scan = uff_file.read("/scan")
-    angles_deg = [np.rad2deg(wave.source.azimuth) for wave in channel_data.sequence]
-    return angles_deg, channel_data, scan
+    return channel_data, scan
 
 
 @app.cell
@@ -114,8 +111,7 @@ def _(channel_data, create_beamforming_setup, np, scan):
     n_total_transmits = base_kwargs["channel_data"].shape[0]
     n_total_channels = base_kwargs["channel_data"].shape[1]
     angles_deg_all = [np.rad2deg(wave.source.azimuth) for wave in channel_data.sequence]
-
-    return base_kwargs, n_total_transmits, n_total_channels, angles_deg_all
+    return angles_deg_all, base_kwargs, n_total_channels, n_total_transmits
 
 
 @app.cell
@@ -139,8 +135,7 @@ def _(mo, n_total_channels, n_total_transmits):
     sound_speed = mo.ui.slider(
         start=1400, stop=1600, value=1540, step=10, label="Speed of Sound (m/s)", show_value=True
     )
-
-    return f_number, vmin_db, channel_range, pw_range, sound_speed
+    return channel_range, f_number, pw_range, sound_speed, vmin_db
 
 
 @app.cell
@@ -153,7 +148,6 @@ def _(
     experimental,
     f_number,
     mo,
-    np,
     plt,
     pw_range,
     scan,
@@ -241,19 +235,20 @@ def _(
 
     # Create control panel
     controls = mo.vstack([
-        mo.md("### Beamforming Parameters"),
-        f_number,
+        mo.md("### Parameters"),
         sound_speed,
-        mo.md("### Aperture Selection"),
-        channel_range,
         pw_range,
+        mo.md("### Receive Aperture"),
+        channel_range,
+        f_number,
         mo.md("### Display"),
         vmin_db,
     ])
 
     # Display side-by-side layout
     layout = mo.hstack([controls, fig], widths=[1, 3])
-    layout  # noqa: B018
+    layout
+    return
 
 
 if __name__ == "__main__":

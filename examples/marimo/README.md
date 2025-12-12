@@ -9,3 +9,5 @@ uv run marimo run examples/marimo/plane_wave_compound.py
 ```
 
 And then open up the associated web-browser to adjust beamforming parameters.
+
+![Beamforming parameters UI](../../assets/marimo_parameters.png)
