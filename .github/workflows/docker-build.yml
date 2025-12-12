@@ -32,6 +32,10 @@ jobs:
     steps:
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
+        with:
+          # aggressively free disk space because
+          # the container is so large
+          tool-cache: true
 
       - name: Check out repository
         uses: actions/checkout@v4
