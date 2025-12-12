@@ -5,27 +5,35 @@ app = marimo.App()
 
 
 @app.cell
-def _():
-    """
-    Plane Wave Compounding
-    ===================================================
-
-    This example demonstrates plane wave compounding of data from the
-    PICMUS challenge (Plane-wave Imaging Challenge in Medical Ultrasound). PICMUS
-    provides standardized datasets for evaluating plane wave imaging algorithms.
-
-    **Example overview:**
-
-    - Load ultrasound data from UFF format files
-    - Beamform data from multiple plane-wave transmits
-    - Coherently compound the results
-    - Visualize the results
-
-    Attribution:
-
-    - Example inspired by vbeam examples (https://github.com/magnusdk/vbeam/)
-    - Dataset from PICMUS challenge (https://www.creatis.insa-lyon.fr/Challenge/IEEE_IUS_2016/)
-    """
+def _(mo):
+    mo.md(r"""
+    # Interactive Plane Wave Compounding
+    
+    This example demonstrates GPU-accelerated plane wave compounding using data from the 
+    [PICMUS challenge](https://www.creatis.insa-lyon.fr/Challenge/IEEE_IUS_2016/) 
+    (Plane-wave Imaging Challenge in Medical Ultrasound).
+    
+    ## Dataset
+    
+    - **128-element linear array** at 5.2 MHz center frequency
+    - **75 plane wave transmits** at angles from -16° to +16°
+    - **Point targets and cysts** for resolution and contrast assessment
+    
+    ## Interactive Parameters
+    
+    Adjust the sliders on the left to explore how different beamforming parameters 
+    affect image quality:
+    
+    - **F-number**: Controls aperture size and focal characteristics
+    - **Speed of Sound**: Adjust for different tissue types
+    - **Channel/Plane Wave Selection**: Sub-aperture beamforming experiments
+    - **Dynamic Range**: Optimize display contrast
+    
+    ---
+    
+    _Dataset from [PICMUS challenge](https://www.creatis.insa-lyon.fr/Challenge/IEEE_IUS_2016/), 
+    example inspired by [vbeam](https://github.com/magnusdk/vbeam/)_
+    """)
     return
 
 
@@ -37,6 +45,7 @@ def _():
 
     import hashlib
 
+    import marimo as mo
     import matplotlib.pyplot as plt
     import numpy as np
 
@@ -61,6 +70,7 @@ def _():
         db_zero,
         experimental,
         hashlib,
+        mo,
         np,
         plt,
     )
@@ -68,19 +78,7 @@ def _():
 
 @app.cell
 def _(cached_download, hashlib):
-    # Download PICMUS Challenge Dataset
-    # ---------------------------------
-    #
-    # The PICMUS challenge contains multiple datasets with multi-angle plane-wave
-    # transmits. This example uses the resolution dataset, which features:
-    #
-    # - **128-element linear array** at 5.2 MHz center frequency
-    # - **75 plane wave transmits** at angles from -16° to +16°
-    # - **Point targets and cysts** for resolution and contrast assessment
-
-    print("📂 Downloading PICMUS challenge dataset...")
-
-    # Download the UFF data file (cached locally after first download)
+    # Download PICMUS Challenge Dataset (runs once, cached)
     url = "http://www.ustb.no/datasets/PICMUS_experiment_resolution_distortion.uff"
     uff_path = cached_download(
         url,
@@ -89,195 +87,201 @@ def _(cached_download, hashlib):
         digest=hashlib.sha256,
         filename="PICMUS_experiment_resolution_distortion.uff",
     )
-
-    print(f"✓ Dataset downloaded to: {uff_path}")
-    print(f"  File size: {uff_path.stat().st_size / 1e6:.1f} MB")
     return (uff_path,)
 
 
 @app.cell
-def _(MM_PER_METER, Uff, np, uff_path):
-    # Load and Inspect PICMUS Data
-    # ----------------------------
-    #
-    # UFF files contain structured ultrasound data including channel data (RF signals),
-    # probe geometry, and scan parameters. Let's examine the PICMUS dataset structure.
-
-    print("\n📋 Loading PICMUS data structure...")
-
-    # Open UFF file and extract components
+def _(Uff, np, uff_path):
+    # Load UFF data structure
     uff_file = Uff(str(uff_path))
     channel_data = uff_file.read("/channel_data")
     scan = uff_file.read("/scan")
-
-    # Display challenge dataset information
-    print("\n📊 PICMUS Challenge Dataset:")
-    print(f"   Plane wave transmits: {len(channel_data.sequence)}")
-    print(f"   Array elements: {channel_data.probe.N}")
-    print(f"   Samples per acquisition: {channel_data.data.shape[0]}")
-    print(f"   Frames: {channel_data.data.shape[-1] if channel_data.data.ndim > 3 else 1}")
-    print(f"   Sampling frequency: {channel_data.sampling_frequency / 1e6:.1f} MHz")
-    print(f"   Center frequency: {channel_data.modulation_frequency / 1e6:.1f} MHz")
-    print(f"   Speed of sound: {channel_data.sound_speed} m/s")
-
-    # Display plane wave transmit angles
     angles_deg = [np.rad2deg(wave.source.azimuth) for wave in channel_data.sequence]
-    print(f"   Plane wave angles: {min(angles_deg):.1f}° to {max(angles_deg):.1f}°")
-    print(f"   Angular step: {np.diff(angles_deg)[0]:.1f}°")
-
-    # Display imaging region
-    print("\n🎯 Imaging Region:")
-    print(f"   Lateral samples: {scan.x_axis.size}")
-    print(f"   Depth samples: {scan.z_axis.size}")
-    print(f"   Lateral extent: {scan.x_axis.min() * MM_PER_METER:.1f} to {scan.x_axis.max() * MM_PER_METER:.1f} mm")
-    print(f"   Depth extent: {scan.z_axis.min() * MM_PER_METER:.1f} to {scan.z_axis.max() * MM_PER_METER:.1f} mm")
     return angles_deg, channel_data, scan
 
 
 @app.cell
-def _(channel_data, create_beamforming_setup, scan):
-    # Extract metadata for mach
-    # ----------------------------------------
-
-    print("\n🔄 Preparing data for beamforming...")
-
-    # Create beamforming setup for all plane wave angles
-    beamform_kwargs = create_beamforming_setup(
+def _(channel_data, create_beamforming_setup, np, scan):
+    # Prepare base beamforming parameters
+    base_kwargs = create_beamforming_setup(
         channel_data=channel_data,
         scan=scan,
         f_number=1.7,
     )
-
-    print("📊 Beamforming setup:")
-    print(f"   Sensor data shape: {beamform_kwargs['channel_data'].shape}")
-    print("   (transmits, elements, samples, frames)")
-    print(f"   Output points: {beamform_kwargs['scan_coords_m'].shape[0]:,}")
-    print(f"   Transmit arrivals shape: {beamform_kwargs['tx_wave_arrivals_s'].shape}")
-    print(f"   F-number: {beamform_kwargs['f_number']}")
-
-    # Extract number of plane-wave transmits
-    n_transmits = beamform_kwargs["channel_data"].shape[0]
-    print(f"   Beamforming {n_transmits} plane-wave transmits")
-    return beamform_kwargs, n_transmits
+    
+    # Extract dimensions for slider ranges
+    n_total_transmits = base_kwargs["channel_data"].shape[0]
+    n_total_channels = base_kwargs["channel_data"].shape[1]
+    angles_deg_all = [np.rad2deg(wave.source.azimuth) for wave in channel_data.sequence]
+    
+    return base_kwargs, n_total_transmits, n_total_channels, angles_deg_all
 
 
 @app.cell
-def _(beamform_kwargs, experimental, n_transmits):
-    # Beamform and compound
-    # -------------------------------------------
-    #
-    # Now we beamform and compound the data:
-    #
-    # 1. **Individual beamforming**: Apply delay-and-sum beamforming to each plane-wave transmit
-    # 2. **Coherent compounding**: Sum the results to form the final image
-    #
-    # Note: The mach.experimental API is subject to change.
-
-    print("\n🚀 Beamforming and compounding...")
-
-    result = experimental.beamform(**beamform_kwargs)
-
-    print("✓ Beamforming and compounding completed!")
-    print(f"  Output shape: {result.shape} (points, frames)")
-    print(f"  Data type: {result.dtype}")
-    print(f"  Coherently compounded {n_transmits} plane-wave transmits")
-    return (result,)
-
-
-@app.cell
-def _(np, result, scan):
-    # Reshape results
-    # ---------------------------
-    #
-    # The beamformed data needs to be reshaped to the 2D imaging grid.
-
-    print("\n📊 Processing compounded results...")
-
-    # Reshape from flattened points back to 2D imaging grid
-    grid_shape = (scan.x_axis.size, scan.z_axis.size)
-    beamformed_image = result.reshape(grid_shape)
-
-    # Extract magnitude for B-mode display (envelope detection)
-    bmode_image = np.abs(beamformed_image)
-
-    print("✓ Image processing complete")
-    print(f"  Image shape: {bmode_image.shape} (lateral, depth)")
-    print(f"  Dynamic range: {bmode_image.min():.2e} to {bmode_image.max():.2e}")
-    return (beamformed_image,)
+def _(mo, n_total_channels, n_total_transmits):
+    # Interactive Controls
+    # --------------------
+    # Create sliders for interactive parameter adjustment
+    
+    f_number = mo.ui.slider(
+        start=0.5, 
+        stop=4.0, 
+        value=1.7, 
+        step=0.1, 
+        label="F-number",
+        show_value=True
+    )
+    
+    vmin_db = mo.ui.slider(
+        start=-80, 
+        stop=-10, 
+        value=-40, 
+        step=5, 
+        label="Dynamic Range (dB)",
+        show_value=True
+    )
+    
+    channel_range = mo.ui.range_slider(
+        start=0, 
+        stop=n_total_channels, 
+        value=[0, n_total_channels], 
+        step=1,
+        label="Channel Range",
+        show_value=True
+    )
+    
+    pw_range = mo.ui.range_slider(
+        start=0, 
+        stop=n_total_transmits, 
+        value=[0, n_total_transmits], 
+        step=1,
+        label="Plane Wave Range",
+        show_value=True
+    )
+    
+    sound_speed = mo.ui.slider(
+        start=1400, 
+        stop=1600, 
+        value=1540, 
+        step=10, 
+        label="Speed of Sound (m/s)",
+        show_value=True
+    )
+    
+    return f_number, vmin_db, channel_range, pw_range, sound_speed
 
 
 @app.cell
 def _(
     MM_PER_METER,
-    angles_deg,
-    beamformed_image,
+    angles_deg_all,
+    base_kwargs,
+    channel_range,
     db_zero,
-    n_transmits,
+    experimental,
+    f_number,
+    mo,
+    np,
     plt,
+    pw_range,
     scan,
+    sound_speed,
+    vmin_db,
 ):
-    # Visualize B-Mode
-    # -----------------------------------------
-
-    print("\n📊 Visualizing B-mode...")
-
-    # Convert to logarithmic (dB) scale for display
+    # Interactive Visualization
+    # -------------------------
+    # This cell reactively updates when any slider changes
+    
+    # Extract slider values
+    ch_start, ch_end = channel_range.value
+    pw_start, pw_end = pw_range.value
+    
+    # Slice the data based on user selections
+    sliced_channel_data = base_kwargs["channel_data"][pw_start:pw_end, ch_start:ch_end, :, :]
+    sliced_rx_coords = base_kwargs["rx_coords_m"][ch_start:ch_end, :]
+    sliced_tx_arrivals = base_kwargs["tx_wave_arrivals_s"][pw_start:pw_end, :]
+    
+    # Update beamforming kwargs with current slider values
+    current_kwargs = {
+        "channel_data": sliced_channel_data,
+        "rx_coords_m": sliced_rx_coords,
+        "scan_coords_m": base_kwargs["scan_coords_m"],
+        "tx_wave_arrivals_s": sliced_tx_arrivals,
+        "out": None,
+        "f_number": f_number.value,
+        "sampling_freq_hz": base_kwargs["sampling_freq_hz"],
+        "sound_speed_m_s": sound_speed.value,
+        "modulation_freq_hz": base_kwargs["modulation_freq_hz"],
+        "rx_start_s": base_kwargs["rx_start_s"],
+    }
+    
+    # Perform beamforming and compounding
+    result = experimental.beamform(**current_kwargs)
+    
+    # Reshape to 2D grid
+    grid_shape = (scan.x_axis.size, scan.z_axis.size)
+    beamformed_image = result.reshape(grid_shape)
+    
+    # Convert to dB scale
     bmode_db = db_zero(beamformed_image)
-
-    # Create high-quality visualization
-    fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
-
-    # Set up coordinate system for proper display
+    
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(8, 8), dpi=150)
+    
     extent = [
         scan.x_axis.min() * MM_PER_METER,
         scan.x_axis.max() * MM_PER_METER,
         scan.z_axis.max() * MM_PER_METER,
         scan.z_axis.min() * MM_PER_METER,
     ]
-
-    # Display the compounded image
+    
     im = ax.imshow(
         bmode_db.T,
-        cmap="gray",  # Clinical grayscale colormap
-        vmin=-40,  # 50 dB dynamic range
-        vmax=0,  # Normalized to maximum
-        extent=extent,  # Physical coordinates in mm
-        aspect="equal",  # Preserve spatial relationships
-        origin="upper",  # Depth increases downward (standard)
-        interpolation="nearest",  # Preserve sharp phantom features
+        cmap="gray",
+        vmin=vmin_db.value,
+        vmax=0,
+        extent=extent,
+        aspect="equal",
+        origin="upper",
+        interpolation="nearest",
     )
-
-    # Add comprehensive labeling
+    
+    # Get angle range for selected plane waves
+    selected_angles = angles_deg_all[pw_start:pw_end]
+    n_pws = pw_end - pw_start
+    n_chs = ch_end - ch_start
+    
     ax.set_title(
-        f"PICMUS Challenge: Plane Wave Compounding\n"
-        f"Coherent Compounding of {n_transmits} Plane Wave Angles "
-        f"({min(angles_deg):.0f}° to {max(angles_deg):.0f}°)",
-        fontsize=14,
+        f"PICMUS: {n_pws} Plane Waves ({min(selected_angles):.0f}° to {max(selected_angles):.0f}°), "
+        f"{n_chs} Channels\n"
+        f"F-number: {f_number.value:.1f}, SoS: {sound_speed.value} m/s",
+        fontsize=12,
     )
-    ax.set_xlabel("Lateral Distance [mm]", fontsize=12)
-    ax.set_ylabel("Depth [mm]", fontsize=12)
-
-    # Add colorbar with proper formatting
+    ax.set_xlabel("Lateral Distance [mm]", fontsize=11)
+    ax.set_ylabel("Depth [mm]", fontsize=11)
+    
     cbar = plt.colorbar(im, ax=ax, shrink=0.8)
-    cbar.set_label("Magnitude [dB]", fontsize=12)
-    cbar.ax.tick_params(labelsize=10)
-
-    # Add subtle grid for better readability
+    cbar.set_label("Magnitude [dB]", fontsize=11)
+    
     ax.grid(True, alpha=0.3, linestyle="--", linewidth=0.5)
-    return
-
-
-@app.cell
-def _():
-    # Expected results
-    # ----------------
-    #
-    # The plane wave compounded image should clearly resolve:
-    #
-    # - **Point targets**: Sharp, well-defined spots for lateral/axial resolution measurement
-    # - **Hyperechoic lesion**: Bright circle to test for geometric distortion
-    # - **Uniform speckle**: Consistent background texture in tissue-mimicking regions
-    return
+    
+    plt.close(fig)
+    
+    # Create control panel
+    controls = mo.vstack([
+        mo.md("### Beamforming Parameters"),
+        f_number,
+        sound_speed,
+        mo.md("### Aperture Selection"),
+        channel_range,
+        pw_range,
+        mo.md("### Display"),
+        vmin_db,
+    ])
+    
+    # Display side-by-side layout
+    layout = mo.hstack([controls, fig], widths=[1, 3])
+    layout
 
 
 if __name__ == "__main__":

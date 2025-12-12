@@ -192,7 +192,7 @@ extent = [
 im = ax.imshow(
     bmode_db.T,
     cmap="gray",  # Clinical grayscale colormap
-    vmin=-40,  # 50 dB dynamic range
+    vmin=-40,  # 40 dB dynamic range
     vmax=0,  # Normalized to maximum
     extent=extent,  # Physical coordinates in mm
     aspect="equal",  # Preserve spatial relationships
