@@ -1,0 +1,26 @@
+services:
+  # Default development service
+  # Mount project as read-write, mask build artifacts with volumes
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mach-beamform-dev:latest
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+
+    # Mount project directory, but use volumes for artifacts to avoid host conflicts
+    volumes:
+      - .:/workspace
+      - /workspace/.venv      # Anonymous volume masks .venv from host
+      - /workspace/build      # Anonymous volume masks build from host
+
+    # GPU access configuration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
