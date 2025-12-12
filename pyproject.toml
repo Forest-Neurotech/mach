@@ -54,6 +54,7 @@ examples = [
     "pymust>=0.1.8",
     "requests>=2.25.0",
     "mach-beamform[vis]",
+    "marimo>=0.18.4",
 ]
 all = [
     "tqdm>=4.65.0",
