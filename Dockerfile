@@ -24,9 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Set CUDA environment variables
-ENV CUDA_HOME=/usr/local/cuda \
-    PATH="${CUDA_HOME}/bin:${PATH}" \
-    LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}"
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH="${CUDA_HOME}/bin:${PATH}"
+ENV LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}"
 
 # Silence warning about not being able to use hard links with cache mount
 ENV UV_LINK_MODE=copy
