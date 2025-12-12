@@ -31,6 +31,9 @@ ENV LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}"
 # Silence warning about not being able to use hard links with cache mount
 ENV UV_LINK_MODE=copy
 
+# Shared flags for uv sync: install all optional extras but exclude heavy dev-dependencies
+ENV UV_SYNC_FLAGS="--frozen --all-extras --no-dev --no-group test --no-group profile --no-group build --no-group array --no-group compare --no-group docs"
+
 # Set working directory
 WORKDIR /workspace
 
@@ -40,8 +43,9 @@ COPY pyproject.toml uv.lock ./
 
 # Install dependencies with cache mount
 # This layer is cached and reused when only source code changes
+# Install all optional dependencies but exclude heavy dev-dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project
+    uv sync $UV_SYNC_FLAGS --no-install-project
 
 # Copy the rest of the project
 # Source code changes won't trigger dependency reinstall
@@ -49,7 +53,10 @@ COPY . .
 
 # Install the project itself (fast, no dependency downloads)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen
+    uv sync $UV_SYNC_FLAGS
+
+# Add virtual environment to PATH so Python and installed packages are available
+ENV PATH="/workspace/.venv/bin:${PATH}"
 
 # OCI labels
 LABEL org.opencontainers.image.title="mach-beamform-dev" \
