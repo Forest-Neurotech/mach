@@ -66,27 +66,33 @@ jobs:
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Export image tag for smoke test
+      - name: Export image tag
         id: export-tag
         run: |
           # Get first tag from metadata output
           TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-  smoke-test:
+      - name: Smoke test image (no GPU)
+        run: |
+          docker run --rm "${{ steps.export-tag.outputs.tag }}" \
+            python -c "import mach; print(f'✓ mach version: {mach.__version__}')"
+
+  smoke-test-gpu:
     name: Smoke test Docker image on GPU
     needs: build-and-push
+    if: github.event_name != 'pull_request'
     runs-on: linux-x64-nvidia-gpu-t4
     permissions:
       packages: read
     timeout-minutes: 10
 
-    # Run all steps inside the built Docker image
     container:
       image: ${{ needs.build-and-push.outputs.image-tag }}
       credentials:
