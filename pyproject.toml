@@ -153,7 +153,7 @@ wheel.packages = ["src/mach"]
 target-version = "py310"
 line-length = 120
 fix = true
-exclude = ["examples/marimo/*"]
+exclude = ["marimo/*"]
 
 [tool.ruff.lint]
 select = [

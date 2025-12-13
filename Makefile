@@ -63,7 +63,7 @@ check: ## Checks the code
 	@echo "🚀 Checking for obsolete dependencies: Running deptry"
 	@uv run deptry .
 	@echo "🚀 Checking marimo notebooks"
-	@uv run marimo check examples/marimo
+	@uv run marimo check marimo
 
 .PHONY: test
 test: ## Runs Python tests
