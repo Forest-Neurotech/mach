@@ -8,6 +8,12 @@ build
 # uv
 .python-version
 
+# marimo
+marimo/_static/
+marimo/_lsp/
+.marimo.toml
+__marimo__
+
 # Vscode
 .vscode/
 *.code-workspace

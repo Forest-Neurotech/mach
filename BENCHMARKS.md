@@ -115,6 +115,7 @@ Anecdotally, kernel-duration seems to hit a pareto-optimum at >70% memory+comput
 
 ## Scaling Performance
 
+(computational-complexity)=
 ### Computational Complexity
 
 The beamforming algorithm scales as:
