@@ -107,7 +107,7 @@ If you're wondering if different thread-block or L1-cache parameters might be be
 
 > **Note**: These utilization percentages are kernel-specific metrics from Nsight Compute, not the overall GPU utilization shown by `nvidia-smi` or `nvtop`.
 
-![Nsight Compute memory workload analysis](assets/profile_nsight_compute.png)
+![Nsight Compute memory workload analysis](assets/memory_throughput_nsight_compute.png)
 
 *Figure: Example Nsight Compute memory workload analysis. (Different dataset)*
 
