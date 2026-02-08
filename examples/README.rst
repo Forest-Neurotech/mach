@@ -16,6 +16,14 @@ Available Examples
 Dependencies
 ------------
 
+**Recommended Installation:**
+
+To run all examples without dependency issues, we recommend installing mach with all optional dependencies::
+
+    pip install mach-beamform[all]
+
+This includes all visualization, data loading, and example-specific dependencies.
+
 **Additional common dependencies:**
 
 - ``matplotlib``: Required for visualizations
