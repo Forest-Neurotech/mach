@@ -31,6 +31,16 @@ References
 """
 
 # %%
+# .. note::
+#    To run this example, we recommend installing mach with all optional dependencies:
+#
+#    .. code-block:: bash
+#
+#       pip install mach-beamform[all]
+#
+#    This ensures all dependencies for the examples are available.
+
+# %%
 # Import Required Libraries
 # -------------------------
 # Let's start by importing all the necessary libraries and checking dependencies.
