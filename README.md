@@ -121,13 +121,16 @@ This package was developed by the [Forest Neurotech](https://forestneurotech.org
 If you use mach in your research, you can cite:
 
 ```bibtex
-@inproceedings{mach,
-  title={{Mach: Beamforming one trillion points per second on a consumer GPU}},
-  author={Guan, Charles and Rockhill, Alex and Pinton, Gianmarco},
-  booktitle={Medical Imaging 2026: Ultrasonic Imaging and Tomography},
-  year={2026},
-  organization = {International Society for Optics and Photonics},
-  publisher = {SPIE},
-  URL={https://github.com/Forest-Neurotech/mach}
+@article{mach,
+  title = {mach: ultrafast ultrasound beamforming},
+  author = {Guan, Charles and Rockhill, Alexander P and Sode, Masashi and Pinton, Gianmarco},
+  year = 2026,
+  journal = {Journal of Medical Imaging},
+  publisher = {Society of Photo-Optical Instrumentation Engineers},
+  volume = 13,
+  number = 6,
+  pages = {062203--062203},
+  doi = {10.1117/1.JMI.13.6.062203},
+  url = {https://github.com/Forest-Neurotech/mach}
 }
 ```
