@@ -52,9 +52,19 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS_INIT} ${CMAKE_CUDA_FLAGS}")
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --ptxas-options=-v")
 # debug info
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --generate-line-info")
-# Compute-capability 7.5+, to support Github T4 runner
+# Build native SASS for every GPU we deploy on. Shipping a native cubin per
+# arch avoids relying on PTX JIT at load time -- a JIT only happens when no
+# cubin matches the device, and it requires a driver at least as new as the
+# build toolkit. A device whose arch has no cubin therefore fails on an older
+# driver: e.g. an L4 (sm_89) on an R535/CUDA-12.2 driver (the version Dataflow
+# ships) cannot JIT this package's CUDA-12.x PTX and dies with
+# cudaErrorUnsupportedPtxVersion. Native cubins are gated only by hardware
+# support, so they run regardless of driver age.
+#   75  = Turing  (T4; GitHub CI runner)
+#   89  = Ada     (L4, A40, RTX 40-series)
+#   90  = Hopper  (H100/H200)
 # https://developer.nvidia.com/cuda-gpus
-set(CMAKE_CUDA_ARCHITECTURES 75)
+set(CMAKE_CUDA_ARCHITECTURES 75 89 90)
 
 # nanobind requires GCC 8+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
