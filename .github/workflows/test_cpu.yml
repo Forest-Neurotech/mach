@@ -43,17 +43,15 @@ jobs:
           # Key based on known file hashes from cached_download() calls
           key: mach-data-cache-v1-${{ runner.os }}-c93af0781daeebf771e53a42a629d4f311407410166ef2f1d227e9d2a1b8c641-c349dc1d677c561434fd0e4a74142c4a0a44b7e6ae0a42d446c078a528ef58c1
 
-      - name: Install nvcc (CUDA compiler)
-        uses: Jimver/cuda-toolkit@v0.2.25
-        id: cuda-toolkit
-        with:
-          method: "network"
-          sub-packages: '["nvcc"]'
+      - name: Setup Flox environment
+        uses: ./.github/actions/setup-flox
 
-      - name: Set up the environment
-        uses: ./.github/actions/setup-python-env
-        with:
-          python-version: ${{ matrix.python-version }}
+      - name: Install Python dependencies
+        run: flox activate -c "uv sync --frozen"
+        env:
+          UV_PYTHON: ${{ matrix.python-version }}
 
       - name: Run CPU-only unit tests
-        run: uv run --group test --group array pytest tests -v -s -m "no_cuda"
+        run: flox activate -c 'uv run --group test --group array pytest tests -v -s -m "no_cuda"'
+        env:
+          UV_PYTHON: ${{ matrix.python-version }}

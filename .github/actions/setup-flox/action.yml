@@ -1,0 +1,34 @@
+name: "Setup Flox Environment"
+description: >-
+  Install Flox, restore/save the Nix store and .flox/cache (python-uv venv), then
+  activate the environment. Use cache-nix-action@v7 (monolithic) so save runs in
+  the action post step after flox activate; restore@v7 alone does not save.
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Flox
+      uses: flox/install-flox-action@v2
+      with:
+        trusted-environments: flox/python-uv
+
+    - name: Restore and save Nix store
+      uses: nix-community/cache-nix-action@v7
+      with:
+        primary-key: nix-store-${{ runner.os }}-${{ hashFiles('.flox/env/manifest.lock') }}
+        restore-prefixes-first-match: |
+          nix-store-${{ runner.os }}-
+
+    - name: Cache Flox uv environment
+      uses: actions/cache@v5
+      with:
+        # Flox cache path comes from:
+        # https://github.com/flox/flox/blob/main/cli/flox-rust-sdk/src/models/environment/path_environment.rs#L371-L378
+        path: .flox/cache
+        key: flox-${{ runner.os }}-${{ hashFiles('uv.lock', '.flox/env/manifest.lock') }}
+        restore-keys: |
+          flox-${{ runner.os }}-
+
+    - name: Install Flox packages (first flox activate)
+      shell: bash
+      run: flox activate -c true
