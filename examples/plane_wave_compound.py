@@ -67,7 +67,8 @@ MM_PER_METER = 1000
 print("📂 Downloading PICMUS challenge dataset...")
 
 # Download the UFF data file (cached locally after first download)
-url = "http://www.ustb.no/datasets/PICMUS_experiment_resolution_distortion.uff"
+# Source: https://unioslo.github.io/USTB/datasets.html
+url = "https://zenodo.org/records/20261898/files/PICMUS_experiment_resolution_distortion.uff"
 uff_path = cached_download(
     url,
     expected_size=145_518_524,
