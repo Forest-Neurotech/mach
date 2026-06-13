@@ -78,7 +78,8 @@ def _():
 @app.cell
 def _(cached_download, hashlib):
     # Download PICMUS Challenge Dataset (runs once, cached)
-    url = "http://www.ustb.no/datasets/PICMUS_experiment_resolution_distortion.uff"
+    # Source: https://unioslo.github.io/USTB/datasets.html
+    url = "https://zenodo.org/records/20261898/files/PICMUS_experiment_resolution_distortion.uff"
     uff_path = cached_download(
         url,
         expected_size=145_518_524,

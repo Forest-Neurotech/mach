@@ -111,7 +111,8 @@ def xp(request):
 @pytest.fixture(scope="session")
 def picmus_phantom_resolution_uff() -> Uff:
     """Download the UFF data of the Picmus phantom resolution UFF file."""
-    url = "http://www.ustb.no/datasets/PICMUS_experiment_resolution_distortion.uff"
+    # Source: https://unioslo.github.io/USTB/datasets.html
+    url = "https://zenodo.org/records/20261898/files/PICMUS_experiment_resolution_distortion.uff"
     uff_path = cached_download(
         url,
         expected_size=145_518_524,
