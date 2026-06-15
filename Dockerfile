@@ -20,8 +20,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv (will automatically install Python when needed)
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# Install uv (pin release; :latest drifts and may pick unsupported Python versions)
+COPY --from=ghcr.io/astral-sh/uv:0.7.3 /uv /uvx /bin/
+
+# Match requires-python upper bound; avoid uv auto-selecting 3.14+ before wheels exist
+ENV UV_PYTHON=3.13
 
 # Set CUDA environment variables
 ENV CUDA_HOME=/usr/local/cuda
