@@ -31,10 +31,7 @@ classifiers = [
 dependencies = [
     "array-api-compat>=1.11.0",
     "einops>=0.8.0",
-    "jaxtyping>=0.2.36",
-    # TODO: remove numpy dependency once jaxtyping no longer implicitly depends on numpy
-    # https://github.com/patrick-kidger/jaxtyping/issues/360
-    "numpy>=1.25.0",
+    "jaxtyping>=0.3.4",
 ]
 
 [project.urls]
@@ -49,6 +46,7 @@ uff = [
 vis = [
     "matplotlib>=3.9.4",
     "colorcet>=3.1.0",
+    "numpy>=1.25.0",
 ]
 examples = [
     "pymust>=0.1.8",
