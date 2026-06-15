@@ -23,7 +23,11 @@ jobs:
       - name: Install Python dependencies
         run: flox activate -c "uv sync --frozen"
         shell: bash
+        env:
+          UV_PYTHON: "3.11"
 
       - name: Check (lint)
         run: flox activate -c "make check"
         shell: bash
+        env:
+          UV_PYTHON: "3.11"
