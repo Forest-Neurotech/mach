@@ -46,6 +46,7 @@ uff = [
 vis = [
     "matplotlib>=3.9.4",
     "colorcet>=3.1.0",
+    "numpy>=1.25.0",
 ]
 examples = [
     "pymust>=0.1.8",

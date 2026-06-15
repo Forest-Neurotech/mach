@@ -7,7 +7,10 @@ try:
 except ImportError as err:
     raise ImportError("matplotlib is required for visualization. Install with: pip install mach-beamform[vis]") from err
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError as err:
+    raise ImportError("numpy is required for visualization. Install with: pip install mach-beamform[vis]") from err
 from matplotlib.colors import Colormap
 
 

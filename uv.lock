@@ -1601,6 +1601,7 @@ examples = [
     { name = "colorcet" },
     { name = "marimo" },
     { name = "matplotlib" },
+    { name = "numpy" },
     { name = "pymust" },
     { name = "requests" },
 ]
@@ -1612,6 +1613,7 @@ uff = [
 vis = [
     { name = "colorcet" },
     { name = "matplotlib" },
+    { name = "numpy" },
 ]
 
 [package.dev-dependencies]
@@ -1700,6 +1702,7 @@ requires-dist = [
     { name = "marimo", marker = "extra == 'examples'", specifier = ">=0.18.4" },
     { name = "matplotlib", marker = "extra == 'vis'", specifier = ">=3.9.4" },
     { name = "numpy", marker = "extra == 'uff'", specifier = ">=1.25.0" },
+    { name = "numpy", marker = "extra == 'vis'", specifier = ">=1.25.0" },
     { name = "pymust", marker = "extra == 'examples'", specifier = ">=0.1.8" },
     { name = "pyuff-ustb", marker = "extra == 'uff'", specifier = ">=0.1.0" },
     { name = "requests", marker = "extra == 'examples'", specifier = ">=2.25.0" },
