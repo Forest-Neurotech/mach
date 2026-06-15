@@ -1230,14 +1230,34 @@ wheels = [
 
 [[package]]
 name = "jaxtyping"
-version = "0.3.1"
+version = "0.3.7"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "wadler-lindig" },
+resolution-markers = [
+    "python_full_version < '3.11'",
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5e/3b/38accb83b537af7f2badc4cc25d90228592f3ea95aa0b11a05a5360079ab/jaxtyping-0.3.1.tar.gz", hash = "sha256:38bb47dc090696ed5959bf3c7e8659036d3cd2643f882c9208d5d9644ae789fe", size = 44846, upload-time = "2025-04-01T18:18:21.161Z" }
+dependencies = [
+    { name = "wadler-lindig", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/40/a2ea3ce0e3e5f540eb970de7792c90fa58fef1b27d34c83f9fa94fea4729/jaxtyping-0.3.7.tar.gz", hash = "sha256:3bd7d9beb7d3cb01a89f93f90581c6f4fff3e5c5dc3c9307e8f8687a040d10c4", size = 45721, upload-time = "2026-01-30T14:18:47.409Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ae/57/9e5ad8c4a6ee8059a28b4183df639ae20da2d9c34572b193ba6020611bd7/jaxtyping-0.3.1-py3-none-any.whl", hash = "sha256:44fbd091338f7f8d592e4e8c71123658feb35a23d07d095af67dbfa96010872d", size = 55257, upload-time = "2025-04-01T18:18:20.162Z" },
+    { url = "https://files.pythonhosted.org/packages/78/42/caf65e9a0576a3abadc537e2f831701ba9081f21317fb3be87d64451587a/jaxtyping-0.3.7-py3-none-any.whl", hash = "sha256:303ab8599edf412eeb40bf06c863e3168fa186cf0e7334703fa741ddd7046e66", size = 56101, upload-time = "2026-01-30T14:18:45.954Z" },
+]
+
+[[package]]
+name = "jaxtyping"
+version = "0.3.11"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "python_full_version == '3.12.*'",
+    "python_full_version == '3.11.*'",
+]
+dependencies = [
+    { name = "wadler-lindig", marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/91/c1/091b8852bd7cbf50bd655543c8506033cf4029300c67f8c176c1286879a9/jaxtyping-0.3.11.tar.gz", hash = "sha256:b09c14acf6686feb9e0df5b0d8c6e7c5b6f8d36bf059ee54cd522a186c2ef050", size = 46489, upload-time = "2026-06-13T18:35:23.167Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8b/38/c66bbdc5047f4776c2bd3e47e5295a350e3fa44d5b8942105e71c2a876a0/jaxtyping-0.3.11-py3-none-any.whl", hash = "sha256:8a4bedc4e3f963fa82df41bd13c7ebc2bad925601eb48614c65798f21329d4e3", size = 56593, upload-time = "2026-06-13T18:35:22.01Z" },
 ]
 
 [[package]]
@@ -1560,8 +1580,8 @@ source = { editable = "." }
 dependencies = [
     { name = "array-api-compat" },
     { name = "einops" },
-    { name = "jaxtyping" },
-    { name = "numpy" },
+    { name = "jaxtyping", version = "0.3.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "jaxtyping", version = "0.3.11", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [package.optional-dependencies]
@@ -1674,12 +1694,11 @@ requires-dist = [
     { name = "colorcet", marker = "extra == 'vis'", specifier = ">=3.1.0" },
     { name = "cupy-cuda12x", marker = "extra == 'all'", specifier = ">=12.0.0" },
     { name = "einops", specifier = ">=0.8.0" },
-    { name = "jaxtyping", specifier = ">=0.2.36" },
+    { name = "jaxtyping", specifier = ">=0.3.4" },
     { name = "mach-beamform", extras = ["uff", "vis", "examples"], marker = "extra == 'all'" },
     { name = "mach-beamform", extras = ["vis"], marker = "extra == 'examples'" },
     { name = "marimo", marker = "extra == 'examples'", specifier = ">=0.18.4" },
     { name = "matplotlib", marker = "extra == 'vis'", specifier = ">=3.9.4" },
-    { name = "numpy", specifier = ">=1.25.0" },
     { name = "numpy", marker = "extra == 'uff'", specifier = ">=1.25.0" },
     { name = "pymust", marker = "extra == 'examples'", specifier = ">=0.1.8" },
     { name = "pyuff-ustb", marker = "extra == 'uff'", specifier = ">=0.1.0" },
