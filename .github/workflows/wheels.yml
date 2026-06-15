@@ -39,7 +39,7 @@ jobs:
       run: |
         nvcc --version
 
-    - uses: pypa/cibuildwheel@v2.23
+    - uses: pypa/cibuildwheel@v3.3
 
     - name: Verify clean directory
       run: git diff --exit-code

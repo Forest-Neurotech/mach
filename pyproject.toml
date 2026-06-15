@@ -229,10 +229,10 @@ testpaths = ["tests"]
 
 [tool.cibuildwheel]
 build = [
-    "cp310-manylinux_x86_64",
     "cp311-manylinux_x86_64",
     "cp312-manylinux_x86_64",
     "cp313-manylinux_x86_64",
+    "cp314-manylinux_x86_64",
 ]
 # we don't use build-isolation, so we need to install
 # build-requires explicitly.
