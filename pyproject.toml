@@ -17,15 +17,15 @@ maintainers = [
 ]
 readme = "README.md"
 keywords = ['beamforming', 'delay and sum', 'ultrasound', 'python', 'cuda']
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.11,<3.15"
 classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
@@ -150,7 +150,7 @@ build-dir = "build/{wheel_tag}"
 wheel.packages = ["src/mach"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 fix = true
 exclude = ["marimo/*"]
