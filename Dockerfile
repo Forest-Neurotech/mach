@@ -39,7 +39,7 @@ WORKDIR /workspace
 
 # Copy dependency files first for better layer caching
 # Dependencies only rebuild when these files change
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock .python-version ./
 
 # Install dependencies with cache mount
 # This layer is cached and reused when only source code changes
