@@ -49,6 +49,8 @@ Build prerequisites:
 * `gcc >= 8`
 * `nvcc >= 11.0`
 
+Or [install Flox](https://flox.dev/docs/install-flox/install) and run `flox activate`.
+
 ### Docker Development
 
 Compile and test without installing the CUDA *toolkit* using our Docker development environment.

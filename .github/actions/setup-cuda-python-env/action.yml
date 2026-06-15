@@ -10,33 +10,38 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Install nvcc and CUDA runtime libraries for cupy
-      uses: Jimver/cuda-toolkit@v0.2.29
-      id: cuda-toolkit
-      with:
-        cuda: 12.6.3
-        sub-packages: '["nvcc", "nvrtc"]'
-        non-cuda-sub-packages: '["libcurand", "libcublas"]'
-        method: "network"
+    - name: Setup Flox environment
+      uses: ./.github/actions/setup-flox
 
     - name: CUDA diagnostic info
       run: |
         nvidia-smi
-        nvcc --version
+        flox activate -c "nvcc --version"
       shell: bash
 
-    - name: Set up the environment
-      uses: ./.github/actions/setup-python-env
-      with:
-        python-version: ${{ inputs.python-version }}
-
-    - name: Build cuda beamformer
-      run: make compile
+    - name: Install Python dependencies
+      run: flox activate -c "uv sync --frozen"
       shell: bash
       env:
-        CC: gcc
-        CXX: g++
+        UV_PYTHON: ${{ inputs.python-version }}
+
+    - name: Check Python version and pip list
+      run: |
+        flox activate -c "uv run --no-sync which python"
+        flox activate -c "uv run --no-sync python --version"
+        flox activate -c "uv pip list"
+      shell: bash
+      env:
+        UV_PYTHON: ${{ inputs.python-version }}
+
+    - name: Build cuda beamformer
+      run: flox activate -c "make compile"
+      shell: bash
+      env:
+        UV_PYTHON: ${{ inputs.python-version }}
 
     - name: Check CuPy/CUDA installation
-      run: uv run --with cupy-cuda12x python -c 'import cupy; cupy.show_config()'
+      run: flox activate -c 'uv run --with cupy-cuda12x python -c "import cupy; cupy.show_config()"'
       shell: bash
+      env:
+        UV_PYTHON: ${{ inputs.python-version }}

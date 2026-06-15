@@ -28,16 +28,12 @@ jobs:
     - name: Check out repository
       uses: actions/checkout@v4
 
-    - name: Install CUDA
-      uses: Jimver/cuda-toolkit@v0.2.25
-      id: cuda-toolkit
-      with:
-        method: "network"
-        sub-packages: '["nvcc"]'
+    - name: Setup Flox environment
+      uses: ./.github/actions/setup-flox
 
     - name: CUDA diagnostic info
-      run: |
-        nvcc --version
+      run: flox activate -c "nvcc --version"
+      shell: bash
 
     - uses: pypa/cibuildwheel@v2.23
 

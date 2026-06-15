@@ -17,15 +17,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install nvcc (CUDA compiler)
-        uses: Jimver/cuda-toolkit@v0.2.25
-        id: cuda-toolkit
-        with:
-          method: "network"
-          sub-packages: '["nvcc"]'
+      - name: Setup Flox environment
+        uses: ./.github/actions/setup-flox
 
-      - name: Set up the environment
-        uses: ./.github/actions/setup-python-env
+      - name: Install Python dependencies
+        run: flox activate -c "uv sync --frozen"
+        shell: bash
 
       - name: Check (lint)
-        run: make check
+        run: flox activate -c "make check"
+        shell: bash

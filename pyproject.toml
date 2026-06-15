@@ -129,6 +129,8 @@ docs = [
 
 [tool.uv]
 default-groups = "all"
+# CMake/nanobind requires Python dev headers, which uv-managed installs have
+python-preference = "only-managed"
 
 [tool.deptry]
 known_first_party = [
