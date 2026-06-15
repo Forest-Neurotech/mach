@@ -58,7 +58,7 @@ examples = [
 ]
 all = [
     "tqdm>=4.65.0",
-    "cupy-cuda12x>=12.0.0",  # for GPU-compounding. TODO: remove this dependency in the future
+    "cupy-cuda12x>=14.0.0",  # for GPU-compounding. TODO: remove this dependency in the future
     "mach-beamform[uff,vis,examples]",
 ]
 
@@ -97,15 +97,15 @@ build = [
 ]
 array = [
     "numpy>=2.0.2",
-    "cupy-cuda12x>=12.0.0",
-    "jax[cuda12]>=0.4.30",
+    "cupy-cuda12x>=14.0.0",
+    "jax[cuda12]>=0.7.1",
 ]
 # Compare with other beamforming libraries
 compare = [
     "pymust>=0.1.8",
     # vbeam and its dependencies
     "vbeam>=1.0.10",
-    "jax[cuda12]>=0.4.30",
+    "jax[cuda12]>=0.7.1",
     "spekk>=1.0.9",
     # plotting
     "colorcet>=3.1.0",
@@ -113,7 +113,7 @@ compare = [
     "matplotlib>=3.9.4",
     "pandas>=2.1.0",
     # moving data to GPU
-    "cupy-cuda12x>=12.0.0",
+    "cupy-cuda12x>=14.0.0",
 ]
 docs = [
     "ipykernel>=6.10",
