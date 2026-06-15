@@ -31,8 +31,6 @@ htmlcov/
 # Environment and logs
 .env
 *.log
-.python-version
-
 # Other artifacts
 *.h5
 !ATS*
