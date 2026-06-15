@@ -6,6 +6,7 @@
 build
 
 # uv
+.python-version
 
 # marimo
 marimo/_static/

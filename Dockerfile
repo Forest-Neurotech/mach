@@ -20,8 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv (pin release; :latest drifts)
-COPY --from=ghcr.io/astral-sh/uv:0.11.14 /uv /uvx /bin/
+# Install uv (will automatically install Python when needed)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Set CUDA environment variables
 ENV CUDA_HOME=/usr/local/cuda
@@ -39,7 +39,7 @@ WORKDIR /workspace
 
 # Copy dependency files first for better layer caching
 # Dependencies only rebuild when these files change
-COPY pyproject.toml uv.lock .python-version ./
+COPY pyproject.toml uv.lock ./
 
 # Install dependencies with cache mount
 # This layer is cached and reused when only source code changes
