@@ -21,6 +21,7 @@ For convenience, we also provide spherical angle conversions following the physi
 
 import math
 import numbers
+import types
 
 from jaxtyping import Real
 
@@ -133,7 +134,7 @@ def spherical_to_cartesian(
 
 def _prepare_inputs_and_namespace(
     *inputs: Real[Array, "..."] | float | int,
-) -> tuple[type[math] | _ArrayNamespace, tuple]:
+) -> tuple[types.ModuleType | _ArrayNamespace, tuple]:
     """Prepare inputs and determine the appropriate namespace (math or array).
 
     For scalar inputs, to avoid requiring a specific array library import,

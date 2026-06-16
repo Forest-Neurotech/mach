@@ -5,7 +5,7 @@ Usage: pass in a scan-object from:
 https://github.com/magnusdk/pyuff_ustb
 """
 
-from typing import Any
+from typing import Any, cast
 
 import einops
 import numpy as np
@@ -120,7 +120,7 @@ def extract_sequence_delays(sequence: list[Any], xp=None) -> Array:
     if xp is not None:
         delays = xp.asarray(delays)
 
-    return delays
+    return cast(Array, delays)
 
 
 def create_beamforming_setup(channel_data, scan, f_number: float = 1.7, xp=None) -> dict[str, Any]:
