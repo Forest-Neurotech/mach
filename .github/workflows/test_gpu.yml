@@ -34,10 +34,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Cache downloaded data
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/mach
           # Key based on known file hashes from cached_download() calls
@@ -62,10 +62,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Cache downloaded data
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/mach
           # Key based on known file hashes from cached_download() calls
@@ -88,7 +88,7 @@ jobs:
           uv run --group compare tests/plot_benchmark.py --points-per-second --output .benchmarks/benchmark_pps.png
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: benchmark-results
           include-hidden-files: true

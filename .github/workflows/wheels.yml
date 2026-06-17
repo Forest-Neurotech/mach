@@ -26,10 +26,10 @@ jobs:
 
     steps:
     - name: Check out repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install CUDA
-      uses: Jimver/cuda-toolkit@v0.2.25
+      uses: Jimver/cuda-toolkit@v0.2.34
       id: cuda-toolkit
       with:
         method: "network"
@@ -46,7 +46,7 @@ jobs:
       shell: bash
 
     - name: Upload wheels
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         path: wheelhouse/*.whl
         name: dist-linux-wheels
@@ -61,12 +61,12 @@ jobs:
 
     steps:
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Download wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         name: dist-linux-wheels
         path: wheelhouse
@@ -90,7 +90,7 @@ jobs:
 
     steps:
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v8.2.0
       with:
         # not using uv for caching, just publish, so workdir is empty
         ignore-empty-workdir: true
@@ -98,7 +98,7 @@ jobs:
         enable-cache: false
 
     - name: Download wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         path: dist
         pattern: dist-*
@@ -123,7 +123,7 @@ jobs:
 
     steps:
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v8.2.0
       with:
         ignore-empty-workdir: true
         enable-cache: false
