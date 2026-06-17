@@ -1,6 +1,6 @@
 """Python bindings and wrapper for the CUDA kernel."""
 
-from typing import Any, cast
+from typing import cast
 
 from array_api_compat import is_writeable_array
 from jaxtyping import Num, Real
@@ -227,10 +227,10 @@ def beamform(  # noqa: C901
     if out is not None and not hasattr(out, "__dlpack_device__"):
         raise TypeError("Array 'out' does not support DLPack protocol")
 
-    # Ensure float32 dtype for coordinate arrays (NumPy/CuPy/JAX use .astype; strict Array API uses xp.astype)
-    rx_coords_m = cast(Array, cast(Any, rx_coords_m).astype(xp_coords.float32, copy=False))
-    scan_coords_m = cast(Array, cast(Any, scan_coords_m).astype(xp_grid.float32, copy=False))
-    tx_wave_arrivals_s = cast(Array, cast(Any, tx_wave_arrivals_s).astype(xp_idt.float32, copy=False))
+    # Ensure float32 dtype for coordinate arrays
+    rx_coords_m = xp_coords.astype(rx_coords_m, xp_coords.float32, copy=False)
+    scan_coords_m = xp_grid.astype(scan_coords_m, xp_grid.float32, copy=False)
+    tx_wave_arrivals_s = xp_idt.astype(tx_wave_arrivals_s, xp_idt.float32, copy=False)
 
     nframes = channel_data.shape[2]
     n_scan = scan_coords_m.shape[0]
@@ -238,14 +238,14 @@ def beamform(  # noqa: C901
     # Determine data type and prepare sensor data
     is_complex = (channel_data.dtype == xp_data.complex64) or (channel_data.dtype == xp_data.complex128)
     if is_complex:
-        channel_data = cast(Array, cast(Any, channel_data).astype(xp_data.complex64, copy=False))
+        channel_data = xp_data.astype(channel_data, xp_data.complex64, copy=False)
         output_dtype = xp_data.complex64
         if modulation_freq_hz is None:
             raise ValueError(
                 "modulation_freq_hz is required for complex phase-correction. set it to 0 if no demodulation was used."
             )
     else:
-        channel_data = cast(Array, cast(Any, channel_data).astype(xp_data.float32, copy=False))
+        channel_data = xp_data.astype(channel_data, xp_data.float32, copy=False)
         output_dtype = xp_data.float32
         if modulation_freq_hz is None:
             modulation_freq_hz = 0.0
