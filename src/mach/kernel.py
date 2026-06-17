@@ -1,8 +1,9 @@
 """Python bindings and wrapper for the CUDA kernel."""
 
+from typing import cast
+
 from array_api_compat import is_writeable_array
 from jaxtyping import Num, Real
-
 from mach._array_api import Array, array_namespace
 from mach._check import ensure_contiguous, is_contiguous
 
@@ -177,31 +178,31 @@ def beamform(  # noqa: C901
 
     # Check input type and dtype before trying to convert dtypes
     # shape should be checked in the kernel
-    if not isinstance(channel_data, Num[Array, "..."]):
+    if not isinstance(channel_data, cast(type, Num[Array, "..."])):
         channel_data_type = type(channel_data)
         channel_data_dtype = getattr(channel_data, "dtype", None)
         raise TypeError(
             f"channel_data must be array with dtype=numeric, got type={channel_data_type}, dtype={channel_data_dtype}"
         )
-    if not isinstance(rx_coords_m, Real[Array, "..."]):
+    if not isinstance(rx_coords_m, cast(type, Real[Array, "..."])):
         rx_coords_m_type = type(rx_coords_m)
         rx_coords_m_dtype = getattr(rx_coords_m_type, "dtype", None)
         raise TypeError(
             f"rx_coords_m must be array with dtype=Real, got type={rx_coords_m_type}, dtype={rx_coords_m_dtype}"
         )
-    if not isinstance(scan_coords_m, Real[Array, "..."]):
+    if not isinstance(scan_coords_m, cast(type, Real[Array, "..."])):
         scan_coords_m_type = type(scan_coords_m)
         scan_coords_m_dtype = getattr(scan_coords_m_type, "dtype", None)
         raise TypeError(
             f"scan_coords_m must be array with dtype=Real, got type={scan_coords_m_type}, dtype={scan_coords_m_dtype}"
         )
-    if not isinstance(tx_wave_arrivals_s, Real[Array, "..."]):
+    if not isinstance(tx_wave_arrivals_s, cast(type, Real[Array, "..."])):
         tx_wave_arrivals_s_type = type(tx_wave_arrivals_s)
         tx_wave_arrivals_s_dtype = getattr(tx_wave_arrivals_s_type, "dtype", None)
         raise TypeError(
             f"tx_wave_arrivals_s must be array with dtype=Real, got type={tx_wave_arrivals_s_type}, dtype={tx_wave_arrivals_s_dtype}"
         )
-    if (out is not None) and (not isinstance(out, Num[Array, "..."])):
+    if (out is not None) and (not isinstance(out, cast(type, Num[Array, "..."]))):
         out_type = type(out)
         out_dtype = getattr(out_type, "dtype", None)
         raise TypeError(f"out must be array with dtype=numeric, got type={out_type}, dtype={out_dtype}")
@@ -264,13 +265,15 @@ def beamform(  # noqa: C901
 
     if not is_writeable_array(out):
         raise ValueError("Output array `out` is not writable. Try using cupy or pytorch for the output array.")
-    if not is_contiguous(out):
+    if not is_contiguous(cast(Array, out)):
         raise ValueError("Output array `out` must be contiguous.")
 
     assert modulation_freq_hz is not None
 
-    # Use the unified beamform function that handles mixed CPU/GPU arrays automatically
-    nb_beamform(
+    # Nanobind's generated stub types these args as NumPy `ArrayLike`,
+    # but we intentionally pass broader DLPack-compatible arrays (NumPy/CuPy/JAX/custom),
+    # so we ignore the type error from nanobind's generated stub.
+    nb_beamform(  # ty: ignore[no-matching-overload]
         channel_data=channel_data,
         rx_coords_m=rx_coords_m,
         scan_coords_m=scan_coords_m,
@@ -285,4 +288,4 @@ def beamform(  # noqa: C901
         interp_type=interp_type,
     )
 
-    return out
+    return cast(Array, out)
