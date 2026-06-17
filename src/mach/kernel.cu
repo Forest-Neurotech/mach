@@ -395,8 +395,8 @@ static void checkCudaDriverCompatibility() {
  */
 static void checkComputeCapability() {
     // Minimum compute capability we compiled for (adjust based on your CMAKE_CUDA_ARCHITECTURES)
-    constexpr int MIN_CC_MAJOR = 6;  // Based on CMAKE_CUDA_ARCHITECTURES 61
-    constexpr int MIN_CC_MINOR = 1;
+    constexpr int MIN_CC_MAJOR = 7;  // Based on CMAKE_CUDA_ARCHITECTURES 75
+    constexpr int MIN_CC_MINOR = 5;
 
     int deviceCount = 0;
     if (cudaGetDeviceCount(&deviceCount) != cudaSuccess || deviceCount == 0) {
