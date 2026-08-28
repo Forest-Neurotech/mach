@@ -5,6 +5,10 @@
 *.cpp
 build
 
+# local agent scratch (benchmarks, notes)
+.agents/
+/thoughts/
+
 # uv
 
 # marimo
