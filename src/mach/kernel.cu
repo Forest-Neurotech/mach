@@ -116,7 +116,7 @@ template<> __device__ __forceinline__ float2 to_compute<float2, __half2>(__half2
  * @param receive_element_idx Index of receive element
  * @param frame_idx Index of frame
  * @param n_samples Number of samples per element
- * @param n_frames Number of frames
+ * @param frame_stride Frames allocated per sample in channel_data (its innermost stride)
  * @param[out] is_valid Whether the sample is within bounds
  * @return Interpolated sensor sample (undefined if is_valid is false)
  */
@@ -127,7 +127,7 @@ __device__ __forceinline__ DataType interpolate_nearest(
     uint32_t receive_element_idx,
     uint32_t frame_idx,
     uint32_t n_samples,
-    uint32_t n_frames,
+    uint32_t frame_stride,
     bool& is_valid
 ) {
     // For nearest neighbor, check if rounded sample is in bounds
@@ -138,10 +138,10 @@ __device__ __forceinline__ DataType interpolate_nearest(
 
     const unsigned int sample_idx_round = __float2uint_rn(sample_idx);  // Round to nearest
     DEBUG_ASSERT(sample_idx_round < n_samples);  // Verify sample index is in bounds
-    const uint32_t channel_data_idx = receive_element_idx * n_samples * n_frames +
-                                     sample_idx_round * n_frames +
+    const uint32_t channel_data_idx = receive_element_idx * n_samples * frame_stride +
+                                     sample_idx_round * frame_stride +
                                      frame_idx;
-    DEBUG_ASSERT(channel_data_idx < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));  // Verify channel data index is in bounds
+    DEBUG_ASSERT(channel_data_idx < static_cast<uint64_t>(n_samples) * frame_stride * (receive_element_idx + 1));  // Verify channel data index is in bounds
 
     is_valid = true;
     return to_compute<DataType>(channel_data[channel_data_idx]);
@@ -156,7 +156,7 @@ __device__ __forceinline__ DataType interpolate_nearest(
  * @param receive_element_idx Index of receive element
  * @param frame_idx Index of frame
  * @param n_samples Number of samples per element
- * @param n_frames Number of frames
+ * @param frame_stride Frames allocated per sample in channel_data (its innermost stride)
  * @param[out] is_valid Whether the sample is within bounds
  * @return Interpolated sensor sample (undefined if is_valid is false)
  */
@@ -167,7 +167,7 @@ __device__ __forceinline__ DataType interpolate_linear(
     uint32_t receive_element_idx,
     uint32_t frame_idx,
     uint32_t n_samples,
-    uint32_t n_frames,
+    uint32_t frame_stride,
     bool& is_valid
 ) {
     // For linear interpolation, check if floor/ceil samples are in bounds
@@ -183,15 +183,15 @@ __device__ __forceinline__ DataType interpolate_linear(
     DEBUG_ASSERT(sample_idx_floor < n_samples);  // Verify floor sample index is in bounds
     DEBUG_ASSERT(sample_idx_ceil < n_samples);   // Verify ceil sample index is in bounds
 
-    const uint32_t channel_data_idx_floor = receive_element_idx * n_samples * n_frames +
-                                           sample_idx_floor * n_frames +
+    const uint32_t channel_data_idx_floor = receive_element_idx * n_samples * frame_stride +
+                                           sample_idx_floor * frame_stride +
                                            frame_idx;
-    const uint32_t channel_data_idx_ceil = receive_element_idx * n_samples * n_frames +
-                                          sample_idx_ceil * n_frames +
+    const uint32_t channel_data_idx_ceil = receive_element_idx * n_samples * frame_stride +
+                                          sample_idx_ceil * frame_stride +
                                           frame_idx;
 
-    DEBUG_ASSERT(channel_data_idx_floor < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));  // Verify floor channel data index is in bounds
-    DEBUG_ASSERT(channel_data_idx_ceil < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));   // Verify ceil channel data index is in bounds
+    DEBUG_ASSERT(channel_data_idx_floor < static_cast<uint64_t>(n_samples) * frame_stride * (receive_element_idx + 1));  // Verify floor channel data index is in bounds
+    DEBUG_ASSERT(channel_data_idx_ceil < static_cast<uint64_t>(n_samples) * frame_stride * (receive_element_idx + 1));   // Verify ceil channel data index is in bounds
 
     is_valid = true;
     return lerp(to_compute<DataType>(channel_data[channel_data_idx_floor]),
@@ -207,7 +207,7 @@ __device__ __forceinline__ DataType interpolate_linear(
  * @param receive_element_idx Index of receive element
  * @param frame_idx Index of frame
  * @param n_samples Number of samples per element
- * @param n_frames Number of frames
+ * @param frame_stride Frames allocated per sample in channel_data (its innermost stride)
  * @param[out] is_valid Whether the sample is within bounds
  * @return Interpolated sensor sample (undefined if is_valid is false)
  */
@@ -218,7 +218,7 @@ __device__ __forceinline__ DataType interpolate_quadratic(
     uint32_t receive_element_idx,
     uint32_t frame_idx,
     uint32_t n_samples,
-    uint32_t n_frames,
+    uint32_t frame_stride,
     bool& is_valid
 ) {
         // For quadratic interpolation, we need 3 points centered around sample_idx
@@ -240,14 +240,14 @@ __device__ __forceinline__ DataType interpolate_quadratic(
     DEBUG_ASSERT(idx_1 < n_samples);     // Verify right point is in bounds
 
     // Calculate channel data indices
-    const uint32_t base_idx = receive_element_idx * n_samples * n_frames + frame_idx;
-    const uint32_t channel_data_idx_neg1 = base_idx + idx_neg1 * n_frames;
-    const uint32_t channel_data_idx_0 = base_idx + idx_0 * n_frames;
-    const uint32_t channel_data_idx_1 = base_idx + idx_1 * n_frames;
+    const uint32_t base_idx = receive_element_idx * n_samples * frame_stride + frame_idx;
+    const uint32_t channel_data_idx_neg1 = base_idx + idx_neg1 * frame_stride;
+    const uint32_t channel_data_idx_0 = base_idx + idx_0 * frame_stride;
+    const uint32_t channel_data_idx_1 = base_idx + idx_1 * frame_stride;
 
-    DEBUG_ASSERT(channel_data_idx_neg1 < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));
-    DEBUG_ASSERT(channel_data_idx_0 < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));
-    DEBUG_ASSERT(channel_data_idx_1 < static_cast<uint64_t>(n_samples) * n_frames * (receive_element_idx + 1));
+    DEBUG_ASSERT(channel_data_idx_neg1 < static_cast<uint64_t>(n_samples) * frame_stride * (receive_element_idx + 1));
+    DEBUG_ASSERT(channel_data_idx_0 < static_cast<uint64_t>(n_samples) * frame_stride * (receive_element_idx + 1));
+    DEBUG_ASSERT(channel_data_idx_1 < static_cast<uint64_t>(n_samples) * frame_stride * (receive_element_idx + 1));
 
     // Calculate Lagrange basis weights using actual sample_idx
     // For points at (center-1), center, (center+1), evaluating at sample_idx
@@ -281,7 +281,7 @@ __device__ __forceinline__ DataType interpolate_quadratic(
  * @param receive_element_idx Index of receive element
  * @param frame_idx Index of frame
  * @param n_samples Number of samples per element
- * @param n_frames Number of frames
+ * @param frame_stride Frames allocated per sample in channel_data (its innermost stride)
  * @param[out] is_valid Whether the sample is within bounds
  * @return Interpolated sensor sample (undefined if is_valid is false)
  */
@@ -292,15 +292,15 @@ __device__ __forceinline__ DataType interpolate_sample(
     uint32_t receive_element_idx,
     uint32_t frame_idx,
     uint32_t n_samples,
-    uint32_t n_frames,
+    uint32_t frame_stride,
     bool& is_valid
 ) {
     if constexpr (interpType == InterpolationType::NearestNeighbor) {
-        return interpolate_nearest<DataType, StorageType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, n_frames, is_valid);
+        return interpolate_nearest<DataType, StorageType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, frame_stride, is_valid);
     } else if constexpr (interpType == InterpolationType::Linear) {
-        return interpolate_linear<DataType, StorageType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, n_frames, is_valid);
+        return interpolate_linear<DataType, StorageType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, frame_stride, is_valid);
     } else if constexpr (interpType == InterpolationType::Quadratic) {
-        return interpolate_quadratic<DataType, StorageType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, n_frames, is_valid);
+        return interpolate_quadratic<DataType, StorageType>(channel_data, sample_idx, receive_element_idx, frame_idx, n_samples, frame_stride, is_valid);
     }
 }
 
