@@ -203,13 +203,25 @@ Two stacked changes for complex (I/Q) channel data. The first is automatic; the 
 
 `beamformKernelInvIQ` restructures the inner loops: the receive-element loop is outermost and each thread accumulates four consecutive frames in registers, fetched with 128-bit vector loads. The sample index, bounds check, apodization weight, and phase-rotation `sincos` are computed once per element instead of once per (element, frame), and the serial load-then-FMA chain becomes four independent accumulator streams.
 
-It is dispatched automatically when `channel_data` is complex, `interp_type` is nearest or linear, `n_frames` is a multiple of 8, and the array's base pointer is 16-byte aligned. float32 (RF) data, quadratic interpolation, other frame counts, and offset views use the original kernel unchanged. `use_inverted_kernel=False` on the `mach._cuda_impl` functions forces the original kernel for A/B comparisons.
+It is dispatched automatically when `channel_data` is complex, `interp_type` is nearest or linear, the array's base pointer is 16-byte aligned, and the innermost stride of `channel_data` both keeps every sample row 16-byte aligned and leaves room for a whole four-frame chunk. float32 (RF) data, quadratic interpolation, and offset views use the original kernel unchanged. `use_inverted_kernel=False` on the `mach._cuda_impl` functions forces the original kernel for A/B comparisons.
 
-Results agree with the original kernel to float32 rounding (maximum relative error about 1e-6, because the summation order differs), so complex outputs with `n_frames % 8 == 0` are no longer bitwise identical to v0.1.x.
+The 128-bit loads constrain that stride, not the number of frames you beamform. The two are independent: `channel_data.shape[2]` is the stride and `out.shape[1]` is how many leading frames are beamformed. So a frame count that would otherwise drop to the original kernel keeps the fast path if the acquisition buffer is allocated with a padded stride:
+
+```python
+# 129 frames of real data, allocated as 132 so every sample row stays 16B-aligned
+chan = cp.zeros((n_rx, n_samples, 132), dtype=cp.complex64)
+chan[:, :, :129] = iq
+out = cp.zeros((n_scan, 129), dtype=cp.complex64)
+nb_beamform(chan, rx, scan, tx_arrivals, out, **kwargs)  # inverted kernel
+```
+
+On an RTX 5090 at 1024 channels x 2.1M voxels, padding 129 frames to a stride of 132 this way is about 1.3x faster than beamforming a tight 129-frame buffer, and the padding costs three frames of wasted loads rather than a copy.
+
+Results agree with the original kernel to float32 rounding (maximum relative error about 1e-6, because the summation order differs), so complex outputs that dispatch the inverted kernel are no longer bitwise identical to v0.1.x. That now includes every frame count that is a multiple of 4, where it was previously a multiple of 8.
 
 ### FP16 channel-data storage
 
-`mach._cuda_impl.beamform_fp16` takes the complex64 channel data as interleaved float16 (re, im) pairs, passed as a `uint16` view of shape `(n_rx, n_samples, 2 * n_frames)`. Only the storage format changes: interpolation, apodization, phase rotation, accumulation, and `out` stay float32 / complex64, so no complex32 dtype is needed. Results match `beamform()` to float16 input rounding (maximum relative error about 2e-4). GPU arrays only, and `out` must be zero-initialised by the caller.
+`mach._cuda_impl.beamform_fp16` takes the complex64 channel data as interleaved float16 (re, im) pairs, passed as a `uint16` view of shape `(n_rx, n_samples, 2 * frame_stride)`. Only the storage format changes: interpolation, apodization, phase rotation, accumulation, and `out` stay float32 / complex64, so no complex32 dtype is needed. Results match `beamform()` to float16 input rounding (maximum relative error about 2e-4). GPU arrays only, and `out` must be zero-initialised by the caller.
 
 ```python
 import cupy as cp
