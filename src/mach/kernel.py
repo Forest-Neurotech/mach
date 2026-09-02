@@ -33,6 +33,7 @@ def beamform(  # noqa: C901
     modulation_freq_hz: float | None = None,
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
+    rx_delays_s: Real[Array, " n_rx"] | None = None,
 ) -> Array:
     """CUDA ultrasound beamforming with automatic GPU/CPU dispatch.
 
@@ -255,6 +256,10 @@ def beamform(  # noqa: C901
     rx_coords_m = ensure_contiguous(rx_coords_m)
     scan_coords_m = ensure_contiguous(scan_coords_m)
     tx_wave_arrivals_s = ensure_contiguous(tx_wave_arrivals_s)
+    if rx_delays_s is not None:
+        # Optional per-element receive delay (phase-screen aberration model); needs the inverted kernel
+        xp_delays = array_namespace(rx_delays_s)
+        rx_delays_s = ensure_contiguous(xp_delays.astype(rx_delays_s, xp_delays.float32, copy=False))
 
     if out is None:
         out = xp_data.zeros((n_scan, nframes), dtype=output_dtype)
@@ -287,6 +292,7 @@ def beamform(  # noqa: C901
         modulation_freq_hz=modulation_freq_hz,
         tukey_alpha=tukey_alpha,
         interp_type=interp_type,
+        rx_delays_s=rx_delays_s,
     )
 
     return cast(Array, out)

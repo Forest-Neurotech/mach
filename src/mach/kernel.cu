@@ -782,7 +782,8 @@ __global__ void beamformKernelInvIQ(
     __grid_constant__ const float tukey_alpha,
     __grid_constant__ const float rx_start_s,
     __grid_constant__ const uint64_t n_output_voxels,
-    __grid_constant__ const uint32_t receive_elements_batch_size
+    __grid_constant__ const uint32_t receive_elements_batch_size,
+    const float* const __restrict__ rx_delays_s  // per-element receive delay added to tau (nullptr: none)
 ) {
     static_assert(std::is_same_v<StorageType, float2> || std::is_same_v<StorageType, __half2>,
                   "Inverted kernel is I/Q only (float2 or __half2 storage).");
@@ -813,10 +814,13 @@ __global__ void beamformKernelInvIQ(
     for (unsigned int e = frame_tid; e < receive_elements_in_batch; e += num_frame_threads) {
         const uint32_t receive_element_idx = receive_element_block_start_idx + e;
         const float3 rx_coord_m = rx_coords_m[receive_element_idx];
-        voxel_tau_and_apod_weights[voxel_tid * receive_elements_in_batch + e] =
-            calculateTxRxDelayAndApodization<UseApodization>(
-                rx_coord_m, voxel_xyz, aperture_radius_squared, aperture_radius,
-                voxel_tx_delay_s, sampling_freq_hz, inv_sound_speed_m_s, tukey_alpha);
+        float2 tau_and_weight = calculateTxRxDelayAndApodization<UseApodization>(
+            rx_coord_m, voxel_xyz, aperture_radius_squared, aperture_radius,
+            voxel_tx_delay_s, sampling_freq_hz, inv_sound_speed_m_s, tukey_alpha);
+        // Per-element receive delay (phase-screen aberration model): shifts both the sample index
+        // and the phase rotation. The -1 "outside the aperture" sentinel is left alone.
+        if ((rx_delays_s != nullptr) && (tau_and_weight.x >= 0.0f)) tau_and_weight.x += rx_delays_s[receive_element_idx];
+        voxel_tau_and_apod_weights[voxel_tid * receive_elements_in_batch + e] = tau_and_weight;
     }
     __syncthreads();
 
@@ -929,7 +933,8 @@ bool _try_beamform_inverted(
     float modulation_freq_hz,
     float tukey_alpha,
     InterpolationType interp_type,
-    bool use_inverted_kernel
+    bool use_inverted_kernel,
+    const float* d_rx_delays_s
 ) {
     if constexpr (!std::is_same_v<DataType, float2>) {
         return false;
@@ -969,7 +974,7 @@ bool _try_beamform_inverted(
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
                 f_number, tukey_alpha, rx_start_s, n_output_voxels,
-                receive_elements_batch_size);
+                receive_elements_batch_size, d_rx_delays_s);
             checkCudaErrors(cudaGetLastError());
         };
         if (apod_flag && nearest)       launch(beamformKernelInvIQ<StorageType, true,  InterpolationType::NearestNeighbor, FPT>);
@@ -1004,6 +1009,7 @@ bool _try_beamform_inverted(
  *                 G_idx(v,e)   = sum_f Re(conj(g) * W*(hi - lo))  [interpolant slope, linear only]
  *                 dL/dtau(v,e) = omega * G_phase + fs * G_idx, then the chain rule:
  *                   grad_tx_arrivals[v] += dL/dtau
+ *                   grad_rx_delays_s[e] += dL/dtau            (per-element receive delay / phase screen)
  *                   grad_scan_coords[v] += dL/dtau * -(rx - scan) / (r * c)
  *                   grad_rx_coords[e]   += dL/dtau *  (rx - scan) / (r * c)
  *                   grad_sound_speed    += dL/dtau * -r / c^2
@@ -1047,7 +1053,9 @@ __global__ void beamformKernelInvIQVJP(
     __grid_constant__ const float tukey_alpha,
     __grid_constant__ const float rx_start_s,
     __grid_constant__ const uint64_t n_output_voxels,
-    __grid_constant__ const uint32_t receive_elements_batch_size
+    __grid_constant__ const uint32_t receive_elements_batch_size,
+    const float* const __restrict__ rx_delays_s,
+    float* __restrict__ grad_rx_delays_s
 ) {
     static_assert(NeedGradData || NeedGradTau, "VJP kernel instantiated with nothing to compute.");
     static_assert(std::is_same_v<StorageType, float2> || std::is_same_v<StorageType, __half2>,
@@ -1082,10 +1090,11 @@ __global__ void beamformKernelInvIQVJP(
         const float aperture_radius_squared = aperture_radius * aperture_radius;
         for (unsigned int e = frame_tid; e < receive_elements_in_batch; e += num_frame_threads) {
             const uint32_t receive_element_idx = receive_element_block_start_idx + e;
-            voxel_tau_and_apod_weights[voxel_tid * receive_elements_in_batch + e] =
-                calculateTxRxDelayAndApodization<UseApodization>(
-                    rx_coords_m[receive_element_idx], voxel_xyz, aperture_radius_squared, aperture_radius,
-                    voxel_tx_delay_s, sampling_freq_hz, inv_sound_speed_m_s, tukey_alpha);
+            float2 tau_and_weight = calculateTxRxDelayAndApodization<UseApodization>(
+                rx_coords_m[receive_element_idx], voxel_xyz, aperture_radius_squared, aperture_radius,
+                voxel_tx_delay_s, sampling_freq_hz, inv_sound_speed_m_s, tukey_alpha);
+            if ((rx_delays_s != nullptr) && (tau_and_weight.x >= 0.0f)) tau_and_weight.x += rx_delays_s[receive_element_idx];
+            voxel_tau_and_apod_weights[voxel_tid * receive_elements_in_batch + e] = tau_and_weight;
         }
     }
     if constexpr (NeedGradTau) {
@@ -1230,6 +1239,7 @@ __global__ void beamformKernelInvIQVJP(
             // dL/dtau * dtau/dr / r, with dtau/dr = 1/c: the coordinate gradients are +-k * (dx, dy, dz)
             const float k = (r > 0.0f) ? g_tau * inv_sound_speed_m_s / r : 0.0f;
             if (grad_tx_arrivals != nullptr) atomicAdd(&grad_tx_arrivals[v], g_tau);
+            if (grad_rx_delays_s != nullptr) atomicAdd(&grad_rx_delays_s[receive_element_idx], g_tau);
             if (grad_scan_coords != nullptr) {
                 atomicAdd(&grad_scan_coords[v].x, -k * dx);
                 atomicAdd(&grad_scan_coords[v].y, -k * dy);
@@ -1268,9 +1278,11 @@ void _beamform_inverted_vjp(
     float3* d_grad_rx_coords,
     double* d_grad_sound_speed,
     double* d_grad_rx_start_s,
+    float* d_grad_rx_delays_s,
     const float3* d_rx_coords_m,
     const float3* d_scan_coords_m,
     const float* d_tx_arrivals_s,
+    const float* d_rx_delays_s,
     uint32_t n_receive_elements,
     uint32_t n_samples,
     uint64_t n_output_voxels,
@@ -1288,7 +1300,7 @@ void _beamform_inverted_vjp(
     const bool need_data = d_grad_channel_data != nullptr;
     const bool need_tau = (d_grad_tx_arrivals != nullptr) || (d_grad_scan_coords != nullptr) ||
                           (d_grad_rx_coords != nullptr) || (d_grad_sound_speed != nullptr) ||
-                          (d_grad_rx_start_s != nullptr);
+                          (d_grad_rx_start_s != nullptr) || (d_grad_rx_delays_s != nullptr);
     if (!need_data && !need_tau) return;
     if (interp_type == InterpolationType::Quadratic) {
         throw std::runtime_error("beamform_vjp: quadratic interpolation has no backward kernel (use nearest or linear)");
@@ -1329,7 +1341,7 @@ void _beamform_inverted_vjp(
             d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s,
             sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
             f_number, tukey_alpha, rx_start_s, n_output_voxels,
-            receive_elements_batch_size);
+            receive_elements_batch_size, d_rx_delays_s, d_grad_rx_delays_s);
         checkCudaErrors(cudaGetLastError());
     };
 #define MACH_VJP_LAUNCH(APOD, INTERP)                                                                   \
@@ -1395,7 +1407,8 @@ void _beamform_impl(
     float modulation_freq_hz,
     float tukey_alpha,
     InterpolationType interp_type,
-    bool use_inverted_kernel
+    bool use_inverted_kernel,
+    const float* d_rx_delays_s
 ) {
 #ifdef CUDA_PROFILE
     TIME_FUNCTION();
@@ -1426,8 +1439,14 @@ void _beamform_impl(
             d_channel_data, d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
             n_receive_elements, n_samples, n_output_voxels, n_frames, frame_stride,
             f_number, rx_start_s, sampling_freq_hz, inv_sound_speed_m_s,
-            modulation_freq_hz, tukey_alpha, interp_type, use_inverted_kernel)) {
+            modulation_freq_hz, tukey_alpha, interp_type, use_inverted_kernel, d_rx_delays_s)) {
         return;
+    }
+    if (d_rx_delays_s != nullptr) {
+        throw std::runtime_error(
+            "rx_delays_s requires the inverted-kernel layout: complex64 data, nearest/linear interpolation, "
+            "channel_data.shape[2] a multiple of 4 frames >= n_frames, a 16-byte aligned base pointer, "
+            "and use_inverted_kernel=True");
     }
 
     // Calculate block dimensions
@@ -1724,7 +1743,8 @@ void beamform(
     float modulation_freq_hz,
     float tukey_alpha,
     InterpolationType interp_type,
-    bool use_inverted_kernel
+    bool use_inverted_kernel,
+    std::optional<nb::ndarray<const float, nb::ndim<1>, nb::c_contig>> rx_delays_s
 ) {
 #ifdef CUDA_PROFILE
     TIME_FUNCTION();
@@ -1744,6 +1764,12 @@ void beamform(
     check_dimensions(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, out,
         n_receive_elements, n_samples, n_output_voxels, n_frames);
     int cpu_count = check_devices(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, out);
+    if (rx_delays_s) {
+        if (rx_delays_s->shape(0) != static_cast<int64_t>(n_receive_elements)) {
+            throw std::runtime_error("rx_delays_s must have shape (n_rx,) matching rx_coords_m, got " + shape_to_string(*rx_delays_s));
+        }
+        cpu_count += check_devices(*rx_delays_s);
+    }
 
 
     // If all arrays are already on CUDA, use the direct kernel call
@@ -1760,14 +1786,14 @@ void beamform(
             _beamform_impl<float2>(d_channel_data, d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 n_receive_elements, n_samples, n_output_voxels, n_frames, frame_stride,
                 f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type,
-                use_inverted_kernel);
+                use_inverted_kernel, rx_delays_s ? rx_delays_s->data() : nullptr);
         } else if constexpr (std::is_same_v<DataType, float>) {
             const float* d_channel_data = channel_data.data();
             float* d_out = out.data();
             _beamform_impl<float>(d_channel_data, d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 n_receive_elements, n_samples, n_output_voxels, n_frames, frame_stride,
                 f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type,
-                use_inverted_kernel);
+                use_inverted_kernel, rx_delays_s ? rx_delays_s->data() : nullptr);
         }
         return;
     }
@@ -1790,6 +1816,7 @@ void beamform(
     std::optional<device_unique_ptr<float3>> d_unique_rx_coords_m;
     std::optional<device_unique_ptr<float3>> d_unique_scan_coords_m;
     std::optional<device_unique_ptr<float>> d_unique_tx_arrivals_s;
+    std::optional<device_unique_ptr<float>> d_unique_rx_delays_s;
     std::optional<device_unique_ptr<DataType>> d_unique_out;
 
 #ifdef CUDA_PROFILE
@@ -1817,6 +1844,11 @@ void beamform(
         d_unique_tx_arrivals_s = thrust::uninitialized_allocate_unique_n<float>(alloc, tx_wave_arrivals_s.size());
         checkCudaErrors(cudaMemcpy(thrust::raw_pointer_cast(d_unique_tx_arrivals_s->get()), tx_wave_arrivals_s.data(), tx_wave_arrivals_s.nbytes(), cudaMemcpyHostToDevice));
     }
+    if (rx_delays_s && (rx_delays_s->device_type() == nb::device::cpu::value)) {
+        device_allocator<float> alloc;
+        d_unique_rx_delays_s = thrust::uninitialized_allocate_unique_n<float>(alloc, rx_delays_s->size());
+        checkCudaErrors(cudaMemcpy(thrust::raw_pointer_cast(d_unique_rx_delays_s->get()), rx_delays_s->data(), rx_delays_s->nbytes(), cudaMemcpyHostToDevice));
+    }
     if (out.device_type() == nb::device::cpu::value) {
         device_allocator<DataType> alloc;
         d_unique_out = thrust::uninitialized_allocate_unique_n<DataType>(alloc, out.size());
@@ -1836,6 +1868,7 @@ void beamform(
     const float3* d_rx_coords_m = d_unique_rx_coords_m ? thrust::raw_pointer_cast(d_unique_rx_coords_m->get()) : reinterpret_cast<const float3*>(rx_coords_m.data());
     const float3* d_scan_coords_m = d_unique_scan_coords_m ? thrust::raw_pointer_cast(d_unique_scan_coords_m->get()) : reinterpret_cast<const float3*>(scan_coords_m.data());
     const float* d_tx_arrivals_s = d_unique_tx_arrivals_s ? thrust::raw_pointer_cast(d_unique_tx_arrivals_s->get()) : tx_wave_arrivals_s.data();
+    const float* d_rx_delays_s = d_unique_rx_delays_s ? thrust::raw_pointer_cast(d_unique_rx_delays_s->get()) : (rx_delays_s ? rx_delays_s->data() : nullptr);
     DataType* d_out = d_unique_out ? thrust::raw_pointer_cast(d_unique_out->get()) : out.data();
     if constexpr (std::is_same_v<DataType, std::complex<float>>) {
         _beamform_impl<float2>(
@@ -1856,7 +1889,8 @@ void beamform(
             modulation_freq_hz,
             tukey_alpha,
             interp_type,
-            use_inverted_kernel
+            use_inverted_kernel,
+            d_rx_delays_s
         );
     } else if constexpr (std::is_same_v<DataType, float>) {
         _beamform_impl<float>(
@@ -1877,7 +1911,8 @@ void beamform(
             modulation_freq_hz,
             tukey_alpha,
             interp_type,
-            use_inverted_kernel
+            use_inverted_kernel,
+            d_rx_delays_s
         );
     }
 #ifdef CUDA_PROFILE
@@ -1932,7 +1967,8 @@ void beamform_fp16(
     float modulation_freq_hz,
     float tukey_alpha,
     InterpolationType interp_type,
-    bool use_inverted_kernel
+    bool use_inverted_kernel,
+    std::optional<nb::ndarray<const float, nb::ndim<1>, nb::c_contig>> rx_delays_s
 ) {
     const size_t n_receive_elements = rx_coords_m.shape(0);
     const size_t n_samples = channel_data.shape(1);
@@ -1956,8 +1992,14 @@ void beamform_fp16(
         throw std::runtime_error("beamform_fp16: scan_coords_m, tx_wave_arrivals_s, and out "
                                  "must agree on n_output_voxels");
     }
-    const int cpu_count = check_devices(channel_data, rx_coords_m, scan_coords_m,
-                                        tx_wave_arrivals_s, out);
+    int cpu_count = check_devices(channel_data, rx_coords_m, scan_coords_m,
+                                  tx_wave_arrivals_s, out);
+    if (rx_delays_s) {
+        if (rx_delays_s->shape(0) != static_cast<int64_t>(n_receive_elements)) {
+            throw std::runtime_error("rx_delays_s must have shape (n_rx,) matching rx_coords_m, got " + shape_to_string(*rx_delays_s));
+        }
+        cpu_count += check_devices(*rx_delays_s);
+    }
     if (cpu_count != 0) {
         throw std::runtime_error("beamform_fp16 requires all arrays on GPU "
                                  "(found " + std::to_string(cpu_count) + " CPU array(s))");
@@ -1975,7 +2017,8 @@ void beamform_fp16(
         reinterpret_cast<float2*>(out.data()),
         n_receive_elements, n_samples, n_output_voxels, n_frames, frame_stride,
         f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s,
-        modulation_freq_hz, tukey_alpha, interp_type, use_inverted_kernel);
+        modulation_freq_hz, tukey_alpha, interp_type, use_inverted_kernel,
+        rx_delays_s ? rx_delays_s->data() : nullptr);
 }
 
 /**
@@ -1995,6 +2038,8 @@ void beamform_vjp(
     std::optional<nb::ndarray<float, nb::shape<-1, 3>, nb::c_contig>> grad_rx_coords_m,
     std::optional<nb::ndarray<double, nb::ndim<1>, nb::c_contig>> grad_sound_speed_m_s,
     std::optional<nb::ndarray<double, nb::ndim<1>, nb::c_contig>> grad_rx_start_s,
+    std::optional<nb::ndarray<const float, nb::ndim<1>, nb::c_contig>> rx_delays_s,
+    std::optional<nb::ndarray<float, nb::ndim<1>, nb::c_contig>> grad_rx_delays_s,
     float f_number,
     float rx_start_s,
     float sampling_freq_hz,
@@ -2036,6 +2081,13 @@ void beamform_vjp(
     check_grad(grad_rx_coords_m, "grad_rx_coords_m", [&](const auto& a) { return a.shape(0) == static_cast<int64_t>(n_receive_elements); });
     check_grad(grad_sound_speed_m_s, "grad_sound_speed_m_s", [&](const auto& a) { return a.shape(0) == 1; });
     check_grad(grad_rx_start_s, "grad_rx_start_s", [&](const auto& a) { return a.shape(0) == 1; });
+    check_grad(grad_rx_delays_s, "grad_rx_delays_s", [&](const auto& a) { return a.shape(0) == static_cast<int64_t>(n_receive_elements); });
+    if (rx_delays_s) {
+        if (rx_delays_s->shape(0) != static_cast<int64_t>(n_receive_elements)) {
+            throw std::runtime_error("beamform_vjp: rx_delays_s must have shape (n_rx,), got " + shape_to_string(*rx_delays_s));
+        }
+        cpu_count += check_devices(*rx_delays_s);
+    }
     if (cpu_count != 0) {
         throw std::runtime_error("beamform_vjp requires all arrays on GPU (found " + std::to_string(cpu_count) + " CPU array(s))");
     }
@@ -2049,9 +2101,11 @@ void beamform_vjp(
         grad_rx_coords_m ? reinterpret_cast<float3*>(grad_rx_coords_m->data()) : nullptr,
         grad_sound_speed_m_s ? grad_sound_speed_m_s->data() : nullptr,
         grad_rx_start_s ? grad_rx_start_s->data() : nullptr,
+        grad_rx_delays_s ? grad_rx_delays_s->data() : nullptr,
         reinterpret_cast<const float3*>(rx_coords_m.data()),
         reinterpret_cast<const float3*>(scan_coords_m.data()),
         tx_wave_arrivals_s.data(),
+        rx_delays_s ? rx_delays_s->data() : nullptr,
         n_receive_elements, n_samples, n_output_voxels, n_frames, frame_stride,
         f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type);
 }
@@ -2087,7 +2141,8 @@ NB_MODULE(_cuda_impl, m) {
         "modulation_freq_hz"_a,
         "tukey_alpha"_a = 0.5f,
         "interp_type"_a = InterpolationType::Linear,
-        "use_inverted_kernel"_a = true);
+        "use_inverted_kernel"_a = true,
+        "rx_delays_s"_a.noconvert() = nb::none());
 
     m.def("beamform", &beamform<float>,
         "channel_data"_a.noconvert(),
@@ -2102,7 +2157,8 @@ NB_MODULE(_cuda_impl, m) {
         "modulation_freq_hz"_a = 0.0f,
         "tukey_alpha"_a = 0.5f,
         "interp_type"_a = InterpolationType::Linear,
-        "use_inverted_kernel"_a = true);
+        "use_inverted_kernel"_a = true,
+        "rx_delays_s"_a.noconvert() = nb::none());
 
     m.def("beamform_fp16", &beamform_fp16,
         "I/Q beamforming with FP16 (half2) channel-data storage (GPU arrays only).\n\n"
@@ -2123,7 +2179,8 @@ NB_MODULE(_cuda_impl, m) {
         "modulation_freq_hz"_a,
         "tukey_alpha"_a = 0.5f,
         "interp_type"_a = InterpolationType::Linear,
-        "use_inverted_kernel"_a = true);
+        "use_inverted_kernel"_a = true,
+        "rx_delays_s"_a.noconvert() = nb::none());
 
     m.def("beamform_vjp", &beamform_vjp,
         "Vector-Jacobian product (backward pass) of beamform() for complex64 channel data "
@@ -2132,8 +2189,10 @@ NB_MODULE(_cuda_impl, m) {
         "grad_out is dL/dRe(out) + j dL/dIm(out). Each gradient buffer that is given is "
         "accumulated into and must be zero-initialised by the caller: grad_channel_data "
         "(the adjoint / backprojection), grad_tx_wave_arrivals_s, grad_scan_coords_m, "
-        "grad_rx_coords_m, grad_sound_speed_m_s (float64, shape (1,)) and grad_rx_start_s "
-        "(float64, shape (1,)). The aperture, sample bounds and apodization weight are "
+        "grad_rx_coords_m, grad_sound_speed_m_s (float64, shape (1,)), grad_rx_start_s "
+        "(float64, shape (1,)) and grad_rx_delays_s (per-element receive delays, shape (n_rx,)). "
+        "rx_delays_s (optional, shape (n_rx,)) is the per-element receive delay added to tau, as in "
+        "beamform(). The aperture, sample bounds and apodization weight are "
         "treated as constants with respect to the geometry.",
         "channel_data"_a.noconvert(),
         "rx_coords_m"_a.noconvert(),
@@ -2146,6 +2205,8 @@ NB_MODULE(_cuda_impl, m) {
         "grad_rx_coords_m"_a.noconvert() = nb::none(),
         "grad_sound_speed_m_s"_a.noconvert() = nb::none(),
         "grad_rx_start_s"_a.noconvert() = nb::none(),
+        "rx_delays_s"_a.noconvert() = nb::none(),
+        "grad_rx_delays_s"_a.noconvert() = nb::none(),
         "f_number"_a,
         "rx_start_s"_a,
         "sampling_freq_hz"_a,

@@ -278,7 +278,10 @@ beamformed image, gradients flow back to
 - `channel_data`: the adjoint of delay-and-sum (backprojection), for learned front ends, unrolled
   reconstruction and least-squares inverse problems;
 - `tx_wave_arrivals_s`, `scan_coords_m`, `rx_coords_m` through the delays;
-- `sound_speed_m_s` and `rx_start_s` when passed as 0-d tensors, for autofocus and calibration.
+- `sound_speed_m_s` and `rx_start_s` when passed as 0-d tensors, for autofocus and calibration;
+- `rx_delays_s`, an optional per-element receive delay added to every arrival time (the
+  phase-screen aberration model), whose gradient is the per-element sum of dL/dtau. The same
+  argument is accepted by `beamform()` and `beamform_fp16()` on the inverted-kernel path.
 
 The receive aperture, the sample-bounds masks and the Tukey apodization weight are treated as
 constants with respect to the geometry (the usual convention for differentiable delay-and-sum).
@@ -329,6 +332,10 @@ rotation, evaluated in float64 with PyTorch autograd for the reference gradients
 
 `examples/autofocus_sound_speed.py` runs the autofocus on a 128-element simulation
 (`--plot` writes the sharpness curve and the images before and after).
+`examples/fullwave_phase_aberration.py` estimates a per-element receive delay screen on
+fullwave-ultra simulations of a speckle phantom imaged through a near-field sound-speed layer
+(`--layer thin|thick --rms-ns --coherence-mm`), with the screen measured on a lone wire target as
+ground truth; it needs the `fullwave2_ultra` package and its solver binaries.
 
 ### Cost on an RTX A6000
 

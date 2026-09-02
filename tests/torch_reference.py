@@ -46,6 +46,7 @@ def beamform_reference(
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
     differentiable_apodization: bool = False,
+    rx_delays_s: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Delay-and-sum of ``channel_data`` (n_rx, n_samples, n_frames) -> (n_scan, n_frames).
 
@@ -63,6 +64,8 @@ def beamform_reference(
     in_aperture = horizontal_sq <= aperture_radius[:, None] ** 2
     distance = torch.sqrt(horizontal_sq + diff[..., 2] ** 2)
     tau = tx_wave_arrivals_s[:, None] + distance / c  # (V, E)
+    if rx_delays_s is not None:
+        tau = tau + rx_delays_s[None, :]  # per-element receive delay (phase screen)
 
     if tukey_alpha > 0:
         weight = tukey_apod_weight(torch.sqrt(horizontal_sq) / aperture_radius[:, None], tukey_alpha)

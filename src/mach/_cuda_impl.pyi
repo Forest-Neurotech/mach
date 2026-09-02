@@ -36,6 +36,7 @@ def beamform(
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
     use_inverted_kernel: bool = True,
+    rx_delays_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C", writable=False)] | None = None,
 ) -> None: ...
 @overload
 def beamform(
@@ -52,6 +53,7 @@ def beamform(
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
     use_inverted_kernel: bool = True,
+    rx_delays_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C", writable=False)] | None = None,
 ) -> None: ...
 def beamform_fp16(
     channel_data: Annotated[ArrayLike, dict(dtype="uint16", shape=(None, None, None), order="C", writable=False)],
@@ -67,6 +69,7 @@ def beamform_fp16(
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
     use_inverted_kernel: bool = True,
+    rx_delays_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C", writable=False)] | None = None,
 ) -> None:
     """
     I/Q beamforming with FP16 (half2) channel-data storage (GPU arrays only).
@@ -85,6 +88,8 @@ def beamform_vjp(
     grad_rx_coords_m: Annotated[ArrayLike, dict(dtype="float32", shape=(None, 3), order="C")] | None = None,
     grad_sound_speed_m_s: Annotated[ArrayLike, dict(dtype="float64", shape=(None), order="C")] | None = None,
     grad_rx_start_s: Annotated[ArrayLike, dict(dtype="float64", shape=(None), order="C")] | None = None,
+    rx_delays_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C", writable=False)] | None = None,
+    grad_rx_delays_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C")] | None = None,
     f_number: float,
     rx_start_s: float,
     sampling_freq_hz: float,

@@ -150,16 +150,26 @@ def test_grad_geometry_matches_reference(interp_type, modulation_freq_hz):
     chan, rx, scan, tx = make_problem()
     y = torch.complex(torch.randn(N_SCAN, 8, device=DEV), torch.randn(N_SCAN, 8, device=DEV))
 
+    delays = ((torch.rand(N_RX, device=DEV) - 0.5) * 20e-9).double()  # +-10 ns per-element screen
+
     def run(fn, dtype):
         # clone: .to() with the same dtype returns the same object, which would alias the fixtures
         rx_ = rx.to(dtype).clone().requires_grad_(True)
         scan_ = scan.to(dtype).clone().requires_grad_(True)
         tx_ = tx.to(dtype).clone().requires_grad_(True)
+        delays_ = delays.to(dtype).clone().requires_grad_(True)
         c_ = torch.tensor(C_M_S, dtype=torch.float64, device=DEV, requires_grad=True)
         t0_ = torch.tensor(0.0, dtype=torch.float64, device=DEV, requires_grad=True)
         kw = kwargs(interp_type=interp_type, modulation_freq_hz=modulation_freq_hz, sound_speed_m_s=c_, rx_start_s=t0_)
-        torch.real(vdot(y, fn(chan, rx_, scan_, tx_, **kw))).backward()
-        return {"tx": tx_.grad, "scan": scan_.grad, "rx": rx_.grad, "c": c_.grad, "t0": t0_.grad}
+        torch.real(vdot(y, fn(chan, rx_, scan_, tx_, rx_delays_s=delays_, **kw))).backward()
+        return {
+            "tx": tx_.grad,
+            "scan": scan_.grad,
+            "rx": rx_.grad,
+            "delays": delays_.grad,
+            "c": c_.grad,
+            "t0": t0_.grad,
+        }
 
     kernel = run(beamform, torch.float32)
     if interp_type == NEAREST and modulation_freq_hz == 0.0:
@@ -178,6 +188,18 @@ def test_grad_geometry_matches_reference(interp_type, modulation_freq_hz):
     print("geometry grads rel norm err:", {k: f"{v:.2e}" for k, v in errs.items()})
     for name, err in errs.items():
         assert err < 1e-3, f"{name}: {err:.2e}"
+    # both are sums of the same dL/dtau(v, e) table, over elements and over voxels respectively
+    assert abs(float(kernel["tx"].sum() - kernel["delays"].sum())) < 1e-4 * float(kernel["tx"].abs().sum())
+
+
+def test_forward_with_rx_delays_matches_reference():
+    chan, rx, scan, tx = make_problem()
+    delays = (torch.rand(N_RX, device=DEV) - 0.5) * 40e-9
+    out = beamform(chan, rx, scan, tx, rx_delays_s=delays, **kwargs())
+    ref = reference(chan, rx, scan, tx, rx_delays_s=delays.double(), **kwargs())
+    assert float((out - ref).abs().max() / ref.abs().max()) < 2e-4
+    plain = beamform(chan, rx, scan, tx, **kwargs())
+    assert not torch.allclose(out, plain)
 
 
 def test_grad_padding_lanes_are_zero():
