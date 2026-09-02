@@ -45,7 +45,10 @@ DX = LAMBDA / PPW  # 30.8 um
 N_RX = 128
 PITCH_CELLS = 10  # 0.308 mm = lambda
 ELEMENT_CELLS = 8  # active cells per element (kerf 2)
-WIDTH_M, DEPTH_M = 44e-3, 42e-3
+# The domain is deeper and wider than the imaged region (38 mm x +-15 mm): the transmitted plane wave
+# returns from the bottom absorbing boundary coherently across the aperture and, smeared upward by the
+# wide receive aperture, hazes the deepest ~10 mm of the image if the boundary sits just below it.
+WIDTH_M, DEPTH_M = 50e-3, 60e-3
 J_SRC = 3  # 1-based interior row of the transmit line
 RX_OFFSET = 2  # receiver row = J_SRC + RX_OFFSET (off the hard-set source row)
 MOD_T = 4
@@ -134,26 +137,28 @@ def base_maps(rng, *, speckle: bool, wires, cyst):
 
 def aberrating_layer(rng, layer, target_rms_s=50e-9, coherence_m=5e-3):
     """Smooth random sound-speed perturbation in a near-field slab with the requested lateral
-    coherence length (autocorrelation FWHM), scaled so that the straight-ray one-way delay screen
-    has the requested RMS. Returns (delta_c map, screen)."""
+    coherence length (autocorrelation FWHM of the per-element straight-ray screen, calibrated on
+    the realisation), scaled so that screen has the requested RMS. Returns (delta_c map, screen)."""
     n_x, n_y = grid_shape()
-    jj = np.arange(1, n_y + 1)
-    zz = z_of_row(jj)
+    zz = z_of_row(np.arange(1, n_y + 1))
     z0, z1, sigma_z = LAYERS[layer]
-    sigma_x = coherence_m * COHERENCE_TO_SIGMA
-    noise = rng.standard_normal((n_x, n_y))
-    field = gaussian_filter(noise, sigma=(sigma_x / DX, sigma_z / DX), mode="reflect")
-    field = field / field.std()
     ramp = min(1.0e-3, 0.25 * (z1 - z0))
     window = np.clip((zz - z0) / ramp, 0, 1) * np.clip((z1 - zz) / ramp, 0, 1)
     window = np.sin(0.5 * np.pi * window) ** 2
-    delta_c = field * window[None, :]
-    screen = -(delta_c / C0**2 * DX).sum(1)  # one-way straight-ray delay per column, per unit delta_c
+    noise = rng.standard_normal((n_x, n_y))
     cols = element_columns() - 1
-    scale = target_rms_s / screen[cols].mean(1).std()
-    delta_c *= scale
-    screen = -(delta_c / C0**2 * DX).sum(1)
-    return delta_c, screen[cols].mean(1)
+    x_el = rx_coords_m()[:, 0]
+    sigma_x = coherence_m * COHERENCE_TO_SIGMA
+    for _ in range(6):  # one realisation's autocorrelation FWHM scatters around the nominal value: calibrate
+        field = gaussian_filter(noise, sigma=(sigma_x / DX, sigma_z / DX), mode="reflect")
+        delta_c = field / field.std() * window[None, :]
+        screen = -(delta_c / C0**2 * DX).sum(1)[cols].mean(1)
+        realised = coherence_length_m(screen, x_el)
+        if abs(realised - coherence_m) < 0.03 * coherence_m:
+            break
+        sigma_x *= coherence_m / realised
+    scale = target_rms_s / screen.std()
+    return delta_c * scale, screen * scale
 
 
 # ----------------------------------------------------------------------------- solver runs
@@ -215,11 +220,41 @@ def transmit_peak_frame(rf, fs):
     return float(np.median(env.argmax(1)))
 
 
+def blank_transmit(rf, fs, peak_frame, blank_us=2.5, ramp_us=0.5):
+    """Zero the outgoing transmit pulse at the start of every trace (raised-cosine edge).
+
+    The receivers sit two cells in front of the transmit line, so the transmitted plane wave is the
+    strongest thing in the record by 50 dB. Left in, the FFT-based Hilbert transform (circular) and
+    the zero-phase filter smear its tail to the END of the record, where the deepest voxels sample:
+    a coherent, in-band haze in the last ~10 mm of the image. Blanking it removes the haze entirely
+    (empty-medium floor below -110 dB); a high-pass filter does not touch it.
+    """
+    out = rf.copy()
+    k = int(peak_frame + blank_us * 1e-6 * fs)
+    r = int(ramp_us * 1e-6 * fs)
+    out[:, :k] = 0.0
+    out[:, k : k + r] *= np.sin(np.linspace(0.0, np.pi / 2, r)) ** 2
+    return out
+
+
+def highpass_rf(rf, fs, cutoff_hz, order=8):
+    """Zero-phase Butterworth high-pass on the RF (removes DC / low-frequency drift and the
+    low-frequency part of absorbing-boundary returns). No-op for cutoff_hz <= 0."""
+    if cutoff_hz <= 0:
+        return rf
+    sos = butter(order, cutoff_hz, btype="high", fs=fs, output="sos")
+    return sosfiltfilt(sos, rf, axis=1)
+
+
 def to_iq(rf, fs):
-    """Baseband I/Q (n_rx, n_samples, 4) complex64 (frame axis padded to 4 for the kernel)."""
-    t = np.arange(rf.shape[1]) / fs
-    iq = hilbert(rf, axis=1) * np.exp(-2j * np.pi * F0 * t)[None, :]
-    chan = np.zeros((N_RX, rf.shape[1], 4), np.complex64)
+    """Baseband I/Q (n_rx, n_samples, 4) complex64 (frame axis padded to 4 for the kernel).
+
+    The analytic signal is computed on a zero-padded record so the FFT-based Hilbert transform
+    does not wrap the start of the trace onto its end."""
+    n = rf.shape[1]
+    t = np.arange(n) / fs
+    iq = hilbert(rf, N=2 * n, axis=1)[:, :n] * np.exp(-2j * np.pi * F0 * t)[None, :]
+    chan = np.zeros((N_RX, n, 4), np.complex64)
     chan[:, :, 0] = iq
     return torch.as_tensor(chan, device=DEV)
 
@@ -353,6 +388,10 @@ def main():  # noqa: C901
     parser.add_argument("--reuse", action="store_true", help="reuse existing solver outputs in out-dir")
     parser.add_argument("--iterations", type=int, default=150, help="iterations per stage")
     parser.add_argument(
+        "--blank-us", type=float, default=2.5, help="blank the transmit pulse for this long after its peak"
+    )
+    parser.add_argument("--hp-mhz", type=float, default=1.0, help="RF high-pass cutoff (MHz); 0 disables")
+    parser.add_argument(
         "--sigma-stages", default="8,3", help="coarse-to-fine smoothing widths (elements) of the screen parametrisation"
     )
     parser.add_argument("--layer", choices=sorted(LAYERS), default="thin")
@@ -399,7 +438,7 @@ def main():  # noqa: C901
     peak = transmit_peak_frame(rf["control"], fs)
     rx_start_s = -peak / fs
     for k in rf:
-        rf[k] = bandpass(rf[k], fs)
+        rf[k] = bandpass(highpass_rf(blank_transmit(rf[k], fs, peak, args.blank_us), fs, args.hp_mhz * 1e6), fs)
     chan = {k: to_iq(v, fs) for k, v in rf.items()}
 
     # measured screen from the lone wire (aberrated minus control removes geometric bias)
@@ -517,6 +556,9 @@ def main():  # noqa: C901
             "iterations": args.iterations,
             "sigma_stages": args.sigma_stages,
             "coherence_mm": args.coherence_mm,
+            "blank_us": args.blank_us,
+            "hp_mhz": args.hp_mhz,
+            "domain_mm": [WIDTH_M * 1e3, DEPTH_M * 1e3],
         },
         "cyst_contrast_db": {},
         "wire_fwhm_mm": {},
@@ -570,7 +612,7 @@ def main():  # noqa: C901
         "estimated": "corrected with estimated screen",
         "measured": "corrected with measured screen",
     }
-    fig, axes = plt.subplots(1, 4, figsize=(20, 6.8), sharey=True)
+    fig, axes = plt.subplots(1, 4, figsize=(20, 7.3), sharey=True)
     for ax, k in zip(axes, ("control", "aberrated", "estimated", "measured"), strict=True):
         ax.imshow(
             20 * np.log10(env[k] / env[k].max() + 1e-12), extent=extent, cmap="gray", vmin=-55, vmax=0, aspect="equal"
