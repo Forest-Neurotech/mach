@@ -268,3 +268,79 @@ uv run --group array python tests/bench_inverted_fp16.py --sweep-batch --json re
 ```
 
 `--el 140x40` adds a 5600-channel configuration. The table above was measured with `86` added to `CMAKE_CUDA_ARCHITECTURES` in `CMakeLists.txt`; the default list runs Ampere GPUs on JIT-compiled compute_75 PTX. A Blackwell GPU (RTX 5090, sm_120) runs the compute_90 PTX unless `120` is added, which needs CUDA 12.8 or newer.
+
+## Experimental: Differentiable Beamforming (`mach.autograd`)
+
+`mach.autograd.beamform` wraps the I/Q forward kernel in a `torch.autograd.Function` with a
+hand-written vector-Jacobian product, `mach._cuda_impl.beamform_vjp`. For a real loss on the
+beamformed image, gradients flow back to
+
+- `channel_data`: the adjoint of delay-and-sum (backprojection), for learned front ends, unrolled
+  reconstruction and least-squares inverse problems;
+- `tx_wave_arrivals_s`, `scan_coords_m`, `rx_coords_m` through the delays;
+- `sound_speed_m_s` and `rx_start_s` when passed as 0-d tensors, for autofocus and calibration.
+
+The receive aperture, the sample-bounds masks and the Tukey apodization weight are treated as
+constants with respect to the geometry (the usual convention for differentiable delay-and-sum).
+Nearest-neighbour interpolation has no interpolant slope, so its delay gradients carry only the
+phase-rotation term and its `rx_start_s` gradient is exactly zero; quadratic interpolation and RF
+(float32) data have no backward pass. The backward kernel runs on the inverted-loop layout
+(complex64, nearest/linear, frame stride a multiple of 4), see above.
+
+```python
+import torch
+from mach.autograd import beamform
+
+c = torch.tensor(1540.0, dtype=torch.float64, device="cuda", requires_grad=True)
+tx_arrivals_s = scan_coords_m[:, 2] / c          # plane wave: differentiable through torch
+image = beamform(channel_data, rx_coords_m, scan_coords_m, tx_arrivals_s.float(),
+                 rx_start_s=0.0, sampling_freq_hz=fs, f_number=1.0,
+                 sound_speed_m_s=c, modulation_freq_hz=f0)   # (n_scan, n_frames) complex64
+intensity = image.abs().pow(2)
+(-(intensity.pow(2).sum() / intensity.sum().pow(2))).backward()   # sharpness autofocus step
+c.grad
+```
+
+### Backward-kernel structure
+
+`beamformKernelInvIQVJP` keeps the forward's phase one (shared delay/apodization table) and
+inverts phase two the other way round: the receive-element loop is outermost and each thread's
+four-frame chunks are innermost, so the delay, taps and complex weight are computed once per
+element. Per chunk it loads the four frames of `grad_out` and either scatters `conj(W) * c_n * g`
+into the two tap rows of `grad_channel_data` with atomics, or dots `g` against the interpolated
+sample and the tap difference to get `dL/dtau` per (voxel, element). A third phase applies the chain
+rule from `dL/dtau` to the transmit arrivals, coordinates, sound speed (`-r/c^2`) and start time
+(`-fs`), with per-block reductions of the two scalars in float64.
+
+### Validation
+
+`tests/test_autograd.py` checks against `tests/torch_reference.py`, a vectorised PyTorch
+delay-and-sum that mirrors the kernel's aperture, Tukey window, interpolation bounds and phase
+rotation, evaluated in float64 with PyTorch autograd for the reference gradients:
+
+| check | agreement |
+|---|---|
+| forward vs float64 reference (all interpolation / apodization / modulation modes) | max rel. error 7e-5 (float32 phase) |
+| dot-product test `<A d, y> = <d, A^H y>` (channel-data adjoint) | rel. error < 1e-4 |
+| `grad_channel_data` vs reference autograd | rel. norm error 6e-5 |
+| delay / coordinate / sound-speed / start-time gradients vs reference autograd | rel. norm error 1e-4 to 1e-7 |
+| `d/dc` and `d/dt0` of a focusing image energy vs central finite differences of the CUDA forward | rel. error 3e-3 and 1e-3 |
+| sharpness autofocus on simulated point scatterers, started 60 m/s off | recovers the true sound speed |
+
+`examples/autofocus_sound_speed.py` runs the autofocus on a 128-element simulation
+(`--plot` writes the sharpness curve and the images before and after).
+
+### Cost on an RTX A6000
+
+Random I/Q data, random element and voxel clouds with a wide aperture, linear interpolation, Tukey
+apodization, median of 3 runs (`tests/bench_autograd.py`). Absolute times depend on how many
+elements fall inside each voxel's aperture; the ratios are the useful part.
+
+| configuration | forward | adjoint (channel data) | delay gradients | both |
+|---|---|---|---|---|
+| 256 ch, 512 samples, 64 frames, 40k voxels | 7.7 ms | 74 ms (9.7×) | 27 ms (3.5×) | 88 ms (11.5×) |
+| 1024 ch, 256 samples, 128 frames, 128³ voxels | 5.0 s | 33.9 s (6.8×) | 10.6 s (2.1×) | 38.9 s (7.8×) |
+
+The channel-data adjoint is bound by its scattered atomics (four float atomics per element, voxel
+and frame for linear interpolation); the delay gradients cost about twice the forward because they
+read both taps and `grad_out`. Only the gradients that autograd asks for are computed.
