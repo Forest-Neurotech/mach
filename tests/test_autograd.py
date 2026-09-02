@@ -9,7 +9,7 @@ if not torch.cuda.is_available():
 from torch_reference import beamform_reference, simulate_point_scatterers_iq  # noqa: E402  (tests/ is on sys.path)
 
 from mach._cuda_impl import beamform_vjp  # noqa: E402
-from mach.autograd import beamform  # noqa: E402
+from mach.autograd import beamform, pad_frames, sharpness  # noqa: E402
 from mach.kernel import InterpolationType  # noqa: E402
 
 N_RX, N_SAMPLES, N_SCAN = 32, 256, 300
@@ -18,29 +18,14 @@ DEV = "cuda"
 NEAREST, LINEAR = InterpolationType.NearestNeighbor, InterpolationType.Linear
 
 
-def make_problem(
-    n_frames: int = 8, frame_stride: int = 8, seed: int = 0, smooth: bool = False, n_samples: int = N_SAMPLES
-):
-    """Random I/Q data (frames padded to frame_stride), a linear array at z=0 and a voxel cloud.
-
-    ``smooth=True`` low-passes the data along the sample axis (Gaussian, sigma = 4 samples) so the
-    beamformed image is a smooth function of the delays, as for band-limited real data.
-    """
-    g = torch.Generator(device=DEV).manual_seed(seed)
-    data = torch.complex(
-        torch.randn((N_RX, n_samples, n_frames), generator=g, device=DEV),
-        torch.randn((N_RX, n_samples, n_frames), generator=g, device=DEV),
+def make_problem(n_frames: int = 8, frame_stride: int = 8):
+    """Random I/Q data (frames padded to frame_stride), a linear array at z=0 and a voxel cloud."""
+    g = torch.Generator(device=DEV).manual_seed(0)
+    chan = torch.zeros((N_RX, N_SAMPLES, frame_stride), dtype=torch.complex64, device=DEV)
+    chan[:, :, :n_frames] = torch.complex(
+        torch.randn((N_RX, N_SAMPLES, n_frames), generator=g, device=DEV),
+        torch.randn((N_RX, N_SAMPLES, n_frames), generator=g, device=DEV),
     )
-    if smooth:
-        taps = torch.arange(-12, 13, device=DEV, dtype=torch.float32)
-        kernel = torch.exp(-0.5 * (taps / 4.0) ** 2)
-        kernel = (kernel / kernel.sum()).view(1, 1, -1)
-        flat = data.permute(0, 2, 1).reshape(-1, 1, n_samples)  # (rx*frames, 1, samples)
-        filt = torch.nn.functional.conv1d
-        flat = torch.complex(filt(flat.real, kernel, padding=12), filt(flat.imag, kernel, padding=12))
-        data = flat.view(N_RX, n_frames, n_samples).permute(0, 2, 1) * 3.0
-    chan = torch.zeros((N_RX, n_samples, frame_stride), dtype=torch.complex64, device=DEV)
-    chan[:, :, :n_frames] = data
     rx = torch.zeros((N_RX, 3), device=DEV)
     rx[:, 0] = (torch.arange(N_RX, device=DEV) - (N_RX - 1) / 2) * 0.3e-3
     scan = torch.rand((N_SCAN, 3), generator=g, device=DEV) * torch.tensor([2e-2, 0.0, 2.4e-2], device=DEV)
@@ -202,6 +187,13 @@ def test_forward_with_rx_delays_matches_reference():
     assert not torch.allclose(out, plain)
 
 
+def test_pad_frames():
+    chan = torch.zeros((N_RX, N_SAMPLES, 6), dtype=torch.complex64, device=DEV)
+    padded, n_frames = pad_frames(chan)
+    assert padded.shape == (N_RX, N_SAMPLES, 8) and n_frames == 6 and padded.is_contiguous()
+    assert pad_frames(padded)[0].shape[2] == 8
+
+
 def test_grad_padding_lanes_are_zero():
     chan, rx, scan, tx = make_problem(n_frames=6, frame_stride=8)
     chan.requires_grad_(True)
@@ -213,7 +205,7 @@ def test_grad_padding_lanes_are_zero():
 F0_FOCUS_HZ, FS_FOCUS_HZ = 5e6, 20e6
 
 
-def make_focusing_problem(n_frames: int = 4):
+def make_focusing_problem():
     """Point scatterers under a plane wave: the image energy peaks at the true sound speed."""
     g = torch.Generator(device=DEV).manual_seed(3)
     n_rx = 64
@@ -229,7 +221,7 @@ def make_focusing_problem(n_frames: int = 4):
         f0_hz=F0_FOCUS_HZ,
         sampling_freq_hz=FS_FOCUS_HZ,
         n_samples=1024,
-        n_frames=n_frames,
+        n_frames=4,
         pulse_sigma_s=0.5e-6,
     )
     # Sample the image finely enough to resolve the point-spread function (lambda = 0.3 mm, pulse
@@ -244,18 +236,13 @@ def make_focusing_problem(n_frames: int = 4):
 def focusing_image(chan, rx, scan, sound_speed_m_s, rx_start_s=0.0):
     """Beamform with the plane-wave transmit arrivals recomputed from the trial sound speed."""
     tx = scan[:, 2] / sound_speed_m_s  # differentiable in sound_speed_m_s through torch as well
-    return beamform(
-        chan,
-        rx,
-        scan,
-        tx.to(torch.float32),
-        rx_start_s=rx_start_s,
+    kw = kwargs(
         sampling_freq_hz=FS_FOCUS_HZ,
-        f_number=1.0,
-        sound_speed_m_s=sound_speed_m_s,
         modulation_freq_hz=F0_FOCUS_HZ,
-        tukey_alpha=0.5,
+        sound_speed_m_s=sound_speed_m_s,
+        rx_start_s=rx_start_s,
     )
+    return beamform(chan, rx, scan, tx.to(torch.float32), **kw)
 
 
 def focusing_energy(chan, rx, scan, sound_speed_m_s, rx_start_s=0.0):
@@ -264,9 +251,7 @@ def focusing_energy(chan, rx, scan, sound_speed_m_s, rx_start_s=0.0):
 
 
 def focusing_sharpness(chan, rx, scan, sound_speed_m_s):
-    """Normalised sharpness sum|I|^4 / (sum|I|^2)^2: scale-free, maximal when the energy is concentrated."""
-    intensity = focusing_image(chan, rx, scan, sound_speed_m_s).abs().pow(2)
-    return intensity.pow(2).sum() / intensity.sum().pow(2)
+    return sharpness(focusing_image(chan, rx, scan, sound_speed_m_s))
 
 
 @pytest.mark.parametrize("parameter", ["sound_speed_m_s", "rx_start_s"])

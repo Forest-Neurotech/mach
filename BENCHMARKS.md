@@ -281,7 +281,7 @@ beamformed image, gradients flow back to
 - `sound_speed_m_s` and `rx_start_s` when passed as 0-d tensors, for autofocus and calibration;
 - `rx_delays_s`, an optional per-element receive delay added to every arrival time (the
   phase-screen aberration model), whose gradient is the per-element sum of dL/dtau. The same
-  argument is accepted by `beamform()` and `beamform_fp16()` on the inverted-kernel path.
+  argument is accepted by `beamform()` and `beamform_fp16()` for every kernel.
 
 The receive aperture, the sample-bounds masks and the Tukey apodization weight are treated as
 constants with respect to the geometry (the usual convention for differentiable delay-and-sum).

@@ -2,6 +2,7 @@
 
 from typing import cast
 
+from array_api_compat import device as array_device
 from array_api_compat import is_writeable_array
 from jaxtyping import Num, Real
 
@@ -257,12 +258,14 @@ def beamform(  # noqa: C901
     scan_coords_m = ensure_contiguous(scan_coords_m)
     tx_wave_arrivals_s = ensure_contiguous(tx_wave_arrivals_s)
     if rx_delays_s is not None:
-        # Optional per-element receive delay (phase-screen aberration model); needs the inverted kernel
+        # Optional per-element receive delay added to every arrival time (phase-screen aberration model)
+        if not hasattr(rx_delays_s, "__dlpack_device__"):
+            raise TypeError("Array 'rx_delays_s' does not support DLPack protocol")
         xp_delays = array_namespace(rx_delays_s)
         rx_delays_s = ensure_contiguous(xp_delays.astype(rx_delays_s, xp_delays.float32, copy=False))
 
     if out is None:
-        out = xp_data.zeros((n_scan, nframes), dtype=output_dtype)
+        out = xp_data.zeros((n_scan, nframes), dtype=output_dtype, device=array_device(channel_data))
     else:
         # Validate output array dtype matches input
         expected_dtype = xp_data.complex64 if is_complex else xp_data.float32

@@ -90,6 +90,8 @@ sphinx_gallery_conf = {
     "gallery_dirs": ["examples"],
     # execute ALL examples/*.py files
     "filename_pattern": "/*",
+    # standalone scripts (optional heavy dependencies, long GPU runs): documented in examples/README.rst
+    "ignore_pattern": r"(autofocus_sound_speed|fullwave_phase_aberration)\.py",
     # specify that examples should be ordered according to filename
     "within_subsection_order": FileNameSortKey,
     # directory where function granular galleries are stored

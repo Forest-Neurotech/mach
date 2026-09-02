@@ -15,27 +15,172 @@ differentiable delay-and-sum). Nearest-neighbour interpolation has no interpolan
 slope, so its delay gradients only carry the phase-rotation term.
 
 Requirements (the inverted-loop kernel layout): CUDA tensors, complex64 channel data,
-nearest or linear interpolation, and ``channel_data.shape[2]`` (the frame stride) a
-multiple of :data:`FRAMES_PER_CHUNK` that is at least the number of frames beamformed.
-Allocate the acquisition buffer with a padded last axis if the frame count is not a
-multiple of four; the padding lanes are ignored and receive zero gradient.
+nearest or linear interpolation, and a frame stride ``channel_data.shape[2]`` that keeps
+every sample row 16-byte aligned and leaves room for a whole :data:`FRAMES_PER_CHUNK`
+chunk past the frames beamformed. :func:`pad_frames` produces such a buffer; the padding
+lanes are ignored and receive zero gradient.
 
-The public function name and arguments mirror :func:`mach.kernel.beamform`.
+:func:`sharpness` is the image objective used by the autofocus examples.
 """
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import torch
 
-from mach import _cuda_impl
+from mach import _cuda_impl, kernel
 from mach.kernel import InterpolationType
 
-__all__ = ["FRAMES_PER_CHUNK", "beamform"]
+__all__ = ["FRAMES_PER_CHUNK", "beamform", "check_layout", "pad_frames", "sharpness"]
 
 FRAMES_PER_CHUNK = 4
-"""Frames per 128-bit chunk in the inverted kernel: the frame stride must be a multiple of this."""
+"""Frames per 128-bit chunk in the inverted kernel."""
+
+
+def pad_frames(channel_data: torch.Tensor) -> tuple[torch.Tensor, int]:
+    """Zero-pad the frame axis to a multiple of :data:`FRAMES_PER_CHUNK`; returns (buffer, n_frames)."""
+    n_frames = int(channel_data.shape[-1])
+    pad = (-n_frames) % FRAMES_PER_CHUNK
+    if pad:
+        channel_data = torch.cat([channel_data, channel_data.new_zeros((*channel_data.shape[:-1], pad))], dim=-1)
+    return channel_data.contiguous(), n_frames
+
+
+def sharpness(image: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
+    """Normalised sharpness sum|I|^4 / (sum|I|^2)^2 of an image: scale-free, maximal when the energy is
+    concentrated. Unlike the image energy it is not invariant to phase errors, so it works as an
+    autofocus objective for plane-wave images. ``mask`` restricts it to a boolean subset of voxels."""
+    intensity = image.abs().pow(2)
+    if mask is not None:
+        intensity = intensity[mask]
+    return intensity.pow(2).sum() / intensity.sum().pow(2)
+
+
+def check_layout(channel_data: torch.Tensor, n_frames: int, interp_type: InterpolationType) -> None:
+    """Raise if ``channel_data`` cannot take the inverted-kernel (and hence the backward) path.
+
+    Mirrors the kernel's own layout rule (``inverted_layout_reason`` in kernel.cu)."""
+    if channel_data.dtype != torch.complex64:
+        raise TypeError(f"channel_data must be complex64 (I/Q), got {channel_data.dtype}")
+    if not channel_data.is_cuda:
+        raise ValueError("channel_data must be a CUDA tensor (mach.autograd is GPU-only)")
+    if channel_data.ndim != 3:
+        raise ValueError(f"channel_data must have shape (n_rx, n_samples, frame_stride), got {tuple(channel_data.shape)}")
+    if interp_type == InterpolationType.Quadratic:
+        raise ValueError("quadratic interpolation has no backward kernel; use nearest or linear")
+    frame_stride = int(channel_data.shape[2])
+    if not 0 < n_frames <= frame_stride:
+        raise ValueError(f"n_frames must be in [1, channel_data.shape[2]={frame_stride}], got {n_frames}")
+    chunked = -(-n_frames // FRAMES_PER_CHUNK) * FRAMES_PER_CHUNK
+    if frame_stride % 2 != 0 or chunked > frame_stride:
+        raise ValueError(
+            f"channel_data.shape[2]={frame_stride} must be even and at least {chunked} for n_frames={n_frames}: "
+            f"pad the frame axis to a multiple of {FRAMES_PER_CHUNK} (see pad_frames)"
+        )
+    if channel_data.data_ptr() % 16 != 0:
+        raise ValueError("channel_data must be 16-byte aligned (not an offset view)")
+
+
+@dataclass(frozen=True)
+class _Params:
+    """Non-differentiable arguments, converted once (a 0-d CUDA tensor costs a device sync per float())."""
+
+    n_frames: int
+    f_number: float
+    rx_start_s: float
+    sampling_freq_hz: float
+    sound_speed_m_s: float
+    modulation_freq_hz: float
+    tukey_alpha: float
+    interp_type: InterpolationType
+
+
+# Differentiable inputs, in the order _BeamformIQ.apply receives them (the params object comes last).
+_GRAD_INPUTS = (
+    "channel_data",
+    "rx_coords_m",
+    "scan_coords_m",
+    "tx_wave_arrivals_s",
+    "rx_delays_s",
+    "sound_speed_m_s",
+    "rx_start_s",
+)
+
+
+class _BeamformIQ(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s, sound_speed_m_s, rx_start_s, params):  # type: ignore[override]
+        out = torch.zeros((scan_coords_m.shape[0], params.n_frames), dtype=torch.complex64, device=channel_data.device)
+        kernel.beamform(
+            channel_data,
+            rx_coords_m,
+            scan_coords_m,
+            tx_wave_arrivals_s,
+            out,
+            rx_start_s=params.rx_start_s,
+            sampling_freq_hz=params.sampling_freq_hz,
+            f_number=params.f_number,
+            sound_speed_m_s=params.sound_speed_m_s,
+            modulation_freq_hz=params.modulation_freq_hz,
+            tukey_alpha=params.tukey_alpha,
+            interp_type=params.interp_type,
+            rx_delays_s=rx_delays_s,
+        )
+        ctx.save_for_backward(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s)
+        ctx.params = params
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_out):  # type: ignore[override]
+        channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s = ctx.saved_tensors
+        p = ctx.params
+        need = dict(zip(_GRAD_INPUTS, ctx.needs_input_grad, strict=False))
+        device = channel_data.device
+
+        def like(name, template):
+            return torch.zeros_like(template) if (need[name] and template is not None) else None
+
+        def scalar(name):
+            return torch.zeros(1, dtype=torch.float64, device=device) if need[name] else None
+
+        grads = {
+            "channel_data": like("channel_data", channel_data),
+            "rx_coords_m": like("rx_coords_m", rx_coords_m),
+            "scan_coords_m": like("scan_coords_m", scan_coords_m),
+            "tx_wave_arrivals_s": like("tx_wave_arrivals_s", tx_wave_arrivals_s),
+            "rx_delays_s": like("rx_delays_s", rx_delays_s),
+            "sound_speed_m_s": scalar("sound_speed_m_s"),
+            "rx_start_s": scalar("rx_start_s"),
+        }
+        if any(g is not None for g in grads.values()):
+            _cuda_impl.beamform_vjp(
+                channel_data,
+                rx_coords_m,
+                scan_coords_m,
+                tx_wave_arrivals_s,
+                grad_out.to(torch.complex64).contiguous(),
+                grad_channel_data=grads["channel_data"],
+                grad_tx_wave_arrivals_s=grads["tx_wave_arrivals_s"],
+                grad_scan_coords_m=grads["scan_coords_m"],
+                grad_rx_coords_m=grads["rx_coords_m"],
+                grad_sound_speed_m_s=grads["sound_speed_m_s"],
+                grad_rx_start_s=grads["rx_start_s"],
+                rx_delays_s=rx_delays_s,
+                grad_rx_delays_s=grads["rx_delays_s"],
+                f_number=p.f_number,
+                rx_start_s=p.rx_start_s,
+                sampling_freq_hz=p.sampling_freq_hz,
+                sound_speed_m_s=p.sound_speed_m_s,
+                modulation_freq_hz=p.modulation_freq_hz,
+                tukey_alpha=p.tukey_alpha,
+                interp_type=p.interp_type,
+            )
+        for name in ("sound_speed_m_s", "rx_start_s"):
+            if grads[name] is not None:
+                grads[name] = grads[name][0]  # 0-d, matching a 0-d input tensor
+        return (*(grads[name] for name in _GRAD_INPUTS), None)
 
 
 def _as_float32(x: torch.Tensor, name: str) -> torch.Tensor:
@@ -44,130 +189,6 @@ def _as_float32(x: torch.Tensor, name: str) -> torch.Tensor:
     if not x.is_cuda:
         raise ValueError(f"{name} must be a CUDA tensor (mach.autograd is GPU-only)")
     return x.to(torch.float32).contiguous()
-
-
-def check_layout(channel_data: torch.Tensor, n_frames: int, interp_type: InterpolationType) -> None:
-    """Raise if ``channel_data`` cannot take the inverted-kernel (and hence the backward) path."""
-    if channel_data.dtype != torch.complex64:
-        raise TypeError(f"channel_data must be complex64 (I/Q), got {channel_data.dtype}")
-    if not channel_data.is_cuda:
-        raise ValueError("channel_data must be a CUDA tensor (mach.autograd is GPU-only)")
-    if channel_data.ndim != 3:
-        raise ValueError(
-            f"channel_data must have shape (n_rx, n_samples, frame_stride), got {tuple(channel_data.shape)}"
-        )
-    if interp_type == InterpolationType.Quadratic:
-        raise ValueError("quadratic interpolation has no backward kernel; use nearest or linear")
-    frame_stride = channel_data.shape[2]
-    if n_frames <= 0 or n_frames > frame_stride:
-        raise ValueError(f"n_frames must be in [1, channel_data.shape[2]={frame_stride}], got {n_frames}")
-    if frame_stride % FRAMES_PER_CHUNK != 0:
-        raise ValueError(
-            f"channel_data.shape[2]={frame_stride} must be a multiple of {FRAMES_PER_CHUNK} frames "
-            "(allocate the buffer with a padded last axis; padding lanes are ignored)"
-        )
-    if channel_data.data_ptr() % 16 != 0:
-        raise ValueError("channel_data must be 16-byte aligned (not an offset view)")
-
-
-class _BeamformIQ(torch.autograd.Function):
-    @staticmethod
-    def forward(  # type: ignore[override]
-        ctx,
-        channel_data,
-        rx_coords_m,
-        scan_coords_m,
-        tx_wave_arrivals_s,
-        rx_delays_s,
-        sound_speed_m_s,
-        rx_start_s,
-        n_frames,
-        f_number,
-        sampling_freq_hz,
-        modulation_freq_hz,
-        tukey_alpha,
-        interp_type,
-    ):
-        c = float(sound_speed_m_s)
-        t0 = float(rx_start_s)
-        out = torch.zeros((scan_coords_m.shape[0], n_frames), dtype=torch.complex64, device=channel_data.device)
-        _cuda_impl.beamform(
-            channel_data,
-            rx_coords_m,
-            scan_coords_m,
-            tx_wave_arrivals_s,
-            out,
-            f_number=f_number,
-            rx_start_s=t0,
-            sampling_freq_hz=sampling_freq_hz,
-            sound_speed_m_s=c,
-            modulation_freq_hz=modulation_freq_hz,
-            tukey_alpha=tukey_alpha,
-            interp_type=interp_type,
-            rx_delays_s=rx_delays_s,
-        )
-        ctx.save_for_backward(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s)
-        ctx.scalars = (c, t0, f_number, sampling_freq_hz, modulation_freq_hz, tukey_alpha, interp_type)
-        return out
-
-    @staticmethod
-    def backward(ctx, grad_out):  # type: ignore[override]
-        channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s = ctx.saved_tensors
-        c, t0, f_number, sampling_freq_hz, modulation_freq_hz, tukey_alpha, interp_type = ctx.scalars
-        need = ctx.needs_input_grad
-        device = channel_data.device
-        grad_out = grad_out.to(torch.complex64).contiguous()
-
-        grad_channel = torch.zeros_like(channel_data) if need[0] else None
-        grad_rx = torch.zeros_like(rx_coords_m) if need[1] else None
-        grad_scan = torch.zeros_like(scan_coords_m) if need[2] else None
-        grad_tx = torch.zeros_like(tx_wave_arrivals_s) if need[3] else None
-        grad_delays = torch.zeros_like(rx_delays_s) if (need[4] and rx_delays_s is not None) else None
-        grad_c = torch.zeros(1, dtype=torch.float64, device=device) if need[5] else None
-        grad_t0 = torch.zeros(1, dtype=torch.float64, device=device) if need[6] else None
-
-        if any(g is not None for g in (grad_channel, grad_rx, grad_scan, grad_tx, grad_delays, grad_c, grad_t0)):
-            _cuda_impl.beamform_vjp(
-                channel_data,
-                rx_coords_m,
-                scan_coords_m,
-                tx_wave_arrivals_s,
-                grad_out,
-                grad_channel_data=grad_channel,
-                grad_tx_wave_arrivals_s=grad_tx,
-                grad_scan_coords_m=grad_scan,
-                grad_rx_coords_m=grad_rx,
-                grad_sound_speed_m_s=grad_c,
-                grad_rx_start_s=grad_t0,
-                rx_delays_s=rx_delays_s,
-                grad_rx_delays_s=grad_delays,
-                f_number=f_number,
-                rx_start_s=t0,
-                sampling_freq_hz=sampling_freq_hz,
-                sound_speed_m_s=c,
-                modulation_freq_hz=modulation_freq_hz,
-                tukey_alpha=tukey_alpha,
-                interp_type=interp_type,
-            )
-
-        def scalar(g):
-            return None if g is None else g[0]
-
-        return (
-            grad_channel,
-            grad_rx,
-            grad_scan,
-            grad_tx,
-            grad_delays,
-            scalar(grad_c),
-            scalar(grad_t0),
-            None,  # n_frames
-            None,  # f_number
-            None,  # sampling_freq_hz
-            None,  # modulation_freq_hz
-            None,  # tukey_alpha
-            None,  # interp_type
-        )
 
 
 def beamform(
@@ -192,11 +213,11 @@ def beamform(
     ``rx_start_s`` may be 0-d tensors with ``requires_grad`` to obtain their gradients.
     ``rx_delays_s`` (n_rx,) adds a per-element receive delay to every arrival time. ``n_frames``
     defaults to ``channel_data.shape[2]`` and may be smaller when the frame axis is padded (see
-    the module docstring).
+    :func:`pad_frames`).
     """
     if n_frames is None:
         n_frames = int(channel_data.shape[2])
-    if isinstance(channel_data, torch.Tensor) and channel_data.dtype == torch.complex128:
+    if channel_data.dtype == torch.complex128:
         channel_data = channel_data.to(torch.complex64)
     check_layout(channel_data, n_frames, interp_type)
     channel_data = channel_data.contiguous()
@@ -206,25 +227,18 @@ def beamform(
     if rx_delays_s is not None:
         rx_delays_s = _as_float32(rx_delays_s, "rx_delays_s")
         if rx_delays_s.shape != (rx_coords_m.shape[0],):
-            raise ValueError(
-                f"rx_delays_s must have shape (n_rx,) = ({rx_coords_m.shape[0]},), got {tuple(rx_delays_s.shape)}"
-            )
-    if modulation_freq_hz is None:
-        raise ValueError("modulation_freq_hz is required for I/Q data; set it to 0 if no demodulation was used")
-    if not math.isfinite(float(sound_speed_m_s)) or float(sound_speed_m_s) <= 0:
+            raise ValueError(f"rx_delays_s must have shape (n_rx,) = ({rx_coords_m.shape[0]},), got {tuple(rx_delays_s.shape)}")
+    c = float(sound_speed_m_s)
+    if not math.isfinite(c) or c <= 0:
         raise ValueError("sound_speed_m_s must be a positive finite number")
-    return _BeamformIQ.apply(
-        channel_data,
-        rx_coords_m,
-        scan_coords_m,
-        tx_wave_arrivals_s,
-        rx_delays_s,
-        sound_speed_m_s,
-        rx_start_s,
-        n_frames,
-        float(f_number),
-        float(sampling_freq_hz),
-        float(modulation_freq_hz),
-        float(tukey_alpha),
-        interp_type,
+    params = _Params(
+        n_frames=n_frames,
+        f_number=float(f_number),
+        rx_start_s=float(rx_start_s),
+        sampling_freq_hz=float(sampling_freq_hz),
+        sound_speed_m_s=c,
+        modulation_freq_hz=float(modulation_freq_hz),
+        tukey_alpha=float(tukey_alpha),
+        interp_type=interp_type,
     )
+    return _BeamformIQ.apply(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s, sound_speed_m_s, rx_start_s, params)

@@ -17,7 +17,7 @@ import math
 import torch
 
 from mach import wavefront
-from mach.autograd import beamform
+from mach.autograd import beamform, sharpness
 
 C_TRUE_M_S = 1540.0
 F0_HZ = 5e6
@@ -41,16 +41,13 @@ def simulate_channel_data(rx_coords_m, scatterers_m, generator):
     return (data + 0.05 * noise).to(torch.complex64).contiguous()
 
 
-def image(channel_data, rx_coords_m, scan_coords_m, sound_speed_m_s):
+def image(channel_data, rx_coords_m, scan_coords_m, plane_distance_m, sound_speed_m_s):
     """Beamform with plane-wave transmit arrivals recomputed from the trial sound speed."""
-    origin = torch.zeros(3, device=DEV)
-    direction = torch.tensor([0.0, 0.0, 1.0], device=DEV)
-    tx_arrivals_s = wavefront.plane(origin, scan_coords_m, direction) / sound_speed_m_s
     return beamform(
         channel_data,
         rx_coords_m,
         scan_coords_m,
-        tx_arrivals_s.to(torch.float32),
+        (plane_distance_m / sound_speed_m_s).to(torch.float32),
         rx_start_s=0.0,
         sampling_freq_hz=FS_HZ,
         f_number=1.0,
@@ -60,10 +57,8 @@ def image(channel_data, rx_coords_m, scan_coords_m, sound_speed_m_s):
     )
 
 
-def sharpness(img):
-    """Normalised sharpness sum|I|^4 / (sum|I|^2)^2, maximal when the energy is concentrated."""
-    intensity = img.abs().pow(2)
-    return intensity.pow(2).sum() / intensity.sum().pow(2)
+def to_db(envelope):
+    return 20 * torch.log10(envelope / envelope.max() + 1e-12)
 
 
 def main():
@@ -83,6 +78,8 @@ def main():
     z = torch.linspace(5e-3, 35e-3, 601, device=DEV)  # 0.05 mm
     xx, zz = torch.meshgrid(x, z, indexing="ij")
     scan = torch.stack([xx.flatten(), torch.zeros_like(xx.flatten()), zz.flatten()], dim=1)
+    # transmit geometry does not depend on the trial sound speed: compute it once
+    plane_distance_m = wavefront.plane(torch.zeros(3, device=DEV), scan, torch.tensor([0.0, 0.0, 1.0], device=DEV))
     print(f"{N_RX} elements, {scatterers.shape[0]} scatterers, {scan.shape[0]} voxels, {N_FRAMES} frames")
 
     c = torch.tensor(args.start, dtype=torch.float64, device=DEV, requires_grad=True)
@@ -91,7 +88,7 @@ def main():
     trajectory = []
     for iteration in range(100):
         optimizer.zero_grad()
-        loss = -sharpness(image(channel_data, rx, scan, c))
+        loss = -sharpness(image(channel_data, rx, scan, plane_distance_m, c))
         loss.backward()
         trajectory.append((float(c), -float(loss), float(c.grad)))
         if iteration % 10 == 0:
@@ -110,9 +107,13 @@ def main():
 
         with torch.no_grad():
             speeds = torch.arange(1440.0, 1641.0, 5.0)
-            curve = [float(sharpness(image(channel_data, rx, scan, float(s)))) for s in speeds]
-            before = image(channel_data, rx, scan, args.start).abs()[:, 0].reshape(len(x), len(z)).T.cpu()
-            after = image(channel_data, rx, scan, float(c)).abs()[:, 0].reshape(len(x), len(z)).T.cpu()
+            curve = [float(sharpness(image(channel_data, rx, scan, plane_distance_m, float(s)))) for s in speeds]
+            before = (
+                image(channel_data, rx, scan, plane_distance_m, args.start).abs()[:, 0].reshape(len(x), len(z)).T.cpu()
+            )
+            after = (
+                image(channel_data, rx, scan, plane_distance_m, float(c)).abs()[:, 0].reshape(len(x), len(z)).T.cpu()
+            )
         fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
         axes[0].plot(speeds, curve, label="sharpness")
         axes[0].plot([p[0] for p in trajectory], [p[1] for p in trajectory], ".-", label="gradient ascent")
@@ -124,9 +125,7 @@ def main():
             (axes[1], before, f"c = {args.start:.0f} m/s"),
             (axes[2], after, f"c = {float(c):.1f} m/s"),
         ):
-            ax.imshow(
-                20 * torch.log10(img / img.max() + 1e-6), extent=extent, cmap="gray", vmin=-50, vmax=0, aspect="equal"
-            )
+            ax.imshow(to_db(img), extent=extent, cmap="gray", vmin=-50, vmax=0, aspect="equal")
             ax.set_title(title)
             ax.set_xlabel("x (mm)")
         axes[1].set_ylabel("z (mm)")

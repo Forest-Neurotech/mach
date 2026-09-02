@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <initializer_list>
+#include <type_traits>
 
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
@@ -483,6 +485,8 @@ static void checkComputeCapability() {
  * @param aperture_radius_squared: float, the square of the aperture radius (m^2)
  * @param aperture_radius: float, the aperture radius (m)
  * @param voxel_tx_delay_s: float, the transmit delay time (seconds, includes rx_start_s offset)
+ * @param rx_element_delay_s: float, per-element receive delay added to the arrival time (seconds; 0 for none).
+ *   Phase-screen model of near-field aberration: shifts both the sample index and the phase rotation.
  * @param sampling_freq_hz: float, the sampling frequency (Hz)
  * @param inv_sound_speed_m_s: float, the inverse of the speed of sound in medium (seconds/meters)
  * @param tukey_alpha: float, the alpha parameter for the Tukey window
@@ -502,6 +506,7 @@ __device__ static inline float2 calculateTxRxDelayAndApodization(
     const float aperture_radius_squared,
     const float aperture_radius,
     const float voxel_tx_delay_s,
+    const float rx_element_delay_s,
     const float sampling_freq_hz,
     const float inv_sound_speed_m_s,
     float tukey_alpha
@@ -522,7 +527,7 @@ __device__ static inline float2 calculateTxRxDelayAndApodization(
     const float rx_delay_s = rx_distance * inv_sound_speed_m_s;  // rx_distance / speed_of_sound
 
     // For phase calculation: physical wave-travel time in seconds (tau = tx_time + rx_time)
-    const float physical_tau_s = voxel_tx_delay_s + rx_delay_s;
+    const float physical_tau_s = voxel_tx_delay_s + rx_element_delay_s + rx_delay_s;
 
     if constexpr (!UseApodization) {
         return make_float2(physical_tau_s, 1.0f);
@@ -534,6 +539,63 @@ __device__ static inline float2 calculateTxRxDelayAndApodization(
     const float weight = tukey_apod_weight(horizontal_distance / aperture_radius, tukey_alpha);
 
     return make_float2(physical_tau_s, weight);
+}
+
+
+/**
+ * @brief Phase 1 shared by every kernel: fill this block's (voxel, element) table of arrival time
+ * and apodization weight, the frame-threads striding over the receive elements of the batch.
+ * @param rx_delays_s optional per-element receive delay (nullptr: none)
+ */
+template<bool UseApodization>
+__device__ __forceinline__ void fill_delay_table(
+    float2* __restrict__ table,
+    const unsigned int voxel_tid,
+    const unsigned int receive_elements_in_batch,
+    const uint32_t receive_element_block_start_idx,
+    const unsigned int frame_tid,
+    const unsigned int num_frame_threads,
+    const float3* const __restrict__ rx_coords_m,
+    const float* const __restrict__ rx_delays_s,
+    const float3 voxel_xyz,
+    const float aperture_radius_squared,
+    const float aperture_radius,
+    const float voxel_tx_delay_s,
+    const float sampling_freq_hz,
+    const float inv_sound_speed_m_s,
+    const float tukey_alpha
+) {
+    for (unsigned int e = frame_tid; e < receive_elements_in_batch; e += num_frame_threads) {
+        const uint32_t receive_element_idx = receive_element_block_start_idx + e;
+        table[voxel_tid * receive_elements_in_batch + e] = calculateTxRxDelayAndApodization<UseApodization>(
+            rx_coords_m[receive_element_idx], voxel_xyz, aperture_radius_squared, aperture_radius,
+            voxel_tx_delay_s, (rx_delays_s != nullptr) ? rx_delays_s[receive_element_idx] : 0.0f,
+            sampling_freq_hz, inv_sound_speed_m_s, tukey_alpha);
+    }
+}
+
+/**
+ * @brief Interpolation taps of a fractional sample index: the rows row0/row1 with weights
+ * (1 - coef1)/coef1, nearest neighbour using row0 only. Same bounds tests and rounding intrinsics
+ * as interpolate_nearest / interpolate_linear. Returns false when the sample is out of bounds.
+ */
+template<InterpolationType interpType>
+__device__ __forceinline__ bool resolve_taps(
+    const float sample_idx, const uint32_t n_samples, unsigned int& row0, unsigned int& row1, float& coef1
+) {
+    static_assert(interpType != InterpolationType::Quadratic, "resolve_taps covers nearest/linear only");
+    if constexpr (interpType == InterpolationType::NearestNeighbor) {
+        if ((sample_idx < -0.5f) || (sample_idx > (n_samples - 0.5f))) return false;
+        row0 = __float2uint_rn(sample_idx);
+        row1 = row0;
+        coef1 = 0.0f;
+    } else {
+        if ((sample_idx < 0.0f) || (sample_idx > (n_samples - 1))) return false;
+        row0 = __float2uint_rd(sample_idx);
+        row1 = __float2uint_ru(sample_idx);
+        coef1 = sample_idx - (float)row0;
+    }
+    return true;
 }
 
 /**
@@ -594,7 +656,8 @@ __global__ void beamformKernel(
     __grid_constant__ const float tukey_alpha,
     __grid_constant__ const float rx_start_s,
     __grid_constant__ const uint64_t n_output_voxels,
-    __grid_constant__ const uint32_t receive_elements_batch_size
+    __grid_constant__ const uint32_t receive_elements_batch_size,
+    const float* const __restrict__ rx_delays_s  // per-element receive delay added to tau (nullptr: none)
 ) {
     // Ensure DataType is one of the supported types for ultrasound beamforming.
     // StorageType controls only how channel_data is stored: full precision
@@ -658,6 +721,7 @@ __global__ void beamformKernel(
             aperture_radius_squared,
             aperture_radius,
             voxel_tx_delay_s,
+            (rx_delays_s != nullptr) ? rx_delays_s[receive_element_idx] : 0.0f,
             sampling_freq_hz,
             inv_sound_speed_m_s,
             tukey_alpha
@@ -811,17 +875,10 @@ __global__ void beamformKernelInvIQ(
     const float aperture_radius_squared = aperture_radius * aperture_radius;
 
     // Phase 1: identical to beamformKernel
-    for (unsigned int e = frame_tid; e < receive_elements_in_batch; e += num_frame_threads) {
-        const uint32_t receive_element_idx = receive_element_block_start_idx + e;
-        const float3 rx_coord_m = rx_coords_m[receive_element_idx];
-        float2 tau_and_weight = calculateTxRxDelayAndApodization<UseApodization>(
-            rx_coord_m, voxel_xyz, aperture_radius_squared, aperture_radius,
-            voxel_tx_delay_s, sampling_freq_hz, inv_sound_speed_m_s, tukey_alpha);
-        // Per-element receive delay (phase-screen aberration model): shifts both the sample index
-        // and the phase rotation. The -1 "outside the aperture" sentinel is left alone.
-        if ((rx_delays_s != nullptr) && (tau_and_weight.x >= 0.0f)) tau_and_weight.x += rx_delays_s[receive_element_idx];
-        voxel_tau_and_apod_weights[voxel_tid * receive_elements_in_batch + e] = tau_and_weight;
-    }
+    fill_delay_table<UseApodization>(
+        voxel_tau_and_apod_weights, voxel_tid, receive_elements_in_batch, receive_element_block_start_idx,
+        frame_tid, num_frame_threads, rx_coords_m, rx_delays_s, voxel_xyz, aperture_radius_squared,
+        aperture_radius, voxel_tx_delay_s, sampling_freq_hz, inv_sound_speed_m_s, tukey_alpha);
     __syncthreads();
 
     // Phase 2: element loop outermost, FPT frames per thread innermost.
@@ -844,25 +901,20 @@ __global__ void beamformKernelInvIQ(
             const float sample_idx = (physical_tau_s - rx_start_s) * sampling_freq_hz;
             const uint32_t receive_element_idx = receive_element_block_start_idx + e;
 
-            // Sample bounds and loads: same conditions and rounding intrinsics as
-            // interpolate_nearest / interpolate_linear, one vector load per tap.
+            // Taps and loads: one vector load per tap.
+            unsigned int row0, row1;
+            float coef1;
+            if (!resolve_taps<interpType>(sample_idx, n_samples, row0, row1, coef1)) continue;
+            const uint32_t base = receive_element_idx * n_samples * frame_stride + frame0;
             float2 samp[FPT];
             if constexpr (interpType == InterpolationType::NearestNeighbor) {
-                if ((sample_idx < -0.5f) || (sample_idx > (n_samples - 0.5f))) continue;
-                const unsigned int s0 = __float2uint_rn(sample_idx);
-                load_frames<StorageType, FPT>(
-                    channel_data + (receive_element_idx * n_samples + s0) * frame_stride + frame0, samp);
+                load_frames<StorageType, FPT>(channel_data + base + row0 * frame_stride, samp);
             } else {  // Linear
-                if ((sample_idx < 0.0f) || (sample_idx > (n_samples - 1))) continue;
-                const unsigned int sample_idx_floor = __float2uint_rd(sample_idx);
-                const unsigned int sample_idx_ceil = __float2uint_ru(sample_idx);
-                const float lerp_alpha = sample_idx - (float)sample_idx_floor;
-                const uint32_t base = receive_element_idx * n_samples * frame_stride + frame0;
                 float2 lo[FPT], hi[FPT];
-                load_frames<StorageType, FPT>(channel_data + base + sample_idx_floor * frame_stride, lo);
-                load_frames<StorageType, FPT>(channel_data + base + sample_idx_ceil * frame_stride, hi);
+                load_frames<StorageType, FPT>(channel_data + base + row0 * frame_stride, lo);
+                load_frames<StorageType, FPT>(channel_data + base + row1 * frame_stride, hi);
                 #pragma unroll
-                for (int k = 0; k < FPT; k++) samp[k] = lerp(lo[k], hi[k], lerp_alpha);
+                for (int k = 0; k < FPT; k++) samp[k] = lerp(lo[k], hi[k], coef1);
             }
 
             // Apodization and phase rotation once per element, folded into one
@@ -914,6 +966,38 @@ __global__ void beamformKernelInvIQ(
  * 16-byte aligned (an offset view), or use_inverted_kernel == false (A/B
  * comparisons against the original).
  */
+/**
+ * @brief Why the inverted-loop kernel cannot run on this layout, or nullptr when it can.
+ * The 128-bit loads constrain the frame STRIDE (channel_data.shape[2]), not the frame count.
+ */
+template<typename StorageType>
+static const char* inverted_layout_reason(const void* d_channel_data, uint32_t frame_stride, uint32_t n_frames,
+                                          InterpolationType interp_type, int fpt) {
+    if (interp_type == InterpolationType::Quadratic) return "quadratic interpolation (nearest/linear only)";
+    if (reinterpret_cast<std::uintptr_t>(d_channel_data) % 16 != 0) return "channel_data is not 16-byte aligned (an offset view)";
+    // Every sample row starts at a multiple of frame_stride, so an unaligned stride misaligns all but the first row.
+    if ((frame_stride * sizeof(StorageType)) % 16 != 0) return "channel_data.shape[2] (the frame stride) does not keep every sample row 16-byte aligned";
+    // The trailing chunk vector-loads a whole fpt frames whether or not n_frames fills them.
+    if (((n_frames + fpt - 1) / fpt) * fpt > frame_stride) return "channel_data.shape[2] leaves no room for a whole 4-frame chunk past n_frames (pad the frame axis to a multiple of 4)";
+    return nullptr;
+}
+
+/** @brief Grid/block decomposition of the inverted-loop kernels (shared by the forward and the VJP). */
+struct InvertedLaunch { dim3 grid; dim3 block; int receive_elements_batch_size; };
+static InvertedLaunch inverted_launch_config(uint32_t n_frames, uint64_t n_output_voxels, uint32_t n_receive_elements, int fpt) {
+    const uint32_t n_chunks = (n_frames + fpt - 1) / fpt;
+    const int frame_threads = min(static_cast<int>(n_chunks), MAX_FRAME_THREADS_PER_BLOCK);
+    const int voxels_per_block = calculate_voxels_per_block(frame_threads);
+    DEBUG_ASSERT(frame_threads * voxels_per_block <= 1024);
+    const int receive_elements_batch_size = calculate_receive_elements_batch_size(voxels_per_block);
+    const int num_blocks = (n_output_voxels + voxels_per_block - 1) / voxels_per_block;
+    const int max_blocks_per_dim = (1 << 16) - 32;
+    const int grid_x = min(max_blocks_per_dim, num_blocks);
+    const int grid_y = (num_blocks + grid_x - 1) / grid_x;
+    const int grid_z = (n_receive_elements + receive_elements_batch_size - 1) / receive_elements_batch_size;
+    return {dim3(grid_x, grid_y, grid_z), dim3(frame_threads, voxels_per_block), receive_elements_batch_size};
+}
+
 template<typename DataType, typename StorageType>
 bool _try_beamform_inverted(
     const StorageType* d_channel_data,
@@ -940,29 +1024,11 @@ bool _try_beamform_inverted(
         return false;
     } else {
         constexpr int FPT = 4;
-        if (interp_type == InterpolationType::Quadratic) return false;
-        if (n_frames == 0) return false;
-        if (!use_inverted_kernel) return false;
-        if (reinterpret_cast<std::uintptr_t>(d_channel_data) % 16 != 0) return false;  // 128-bit loads need a 16B base
-        // Every sample row starts at a multiple of frame_stride, so an unaligned
-        // stride misaligns all but the first row however the base is aligned.
-        if ((frame_stride * sizeof(StorageType)) % 16 != 0) return false;
-        // The trailing chunk vector-loads FPT frames whether or not n_frames fills them.
-        if (((n_frames + FPT - 1) / FPT) * FPT > frame_stride) return false;
-
-        const uint32_t n_chunks = (n_frames + FPT - 1) / FPT;
-        const int frame_threads = min(static_cast<int>(n_chunks), MAX_FRAME_THREADS_PER_BLOCK);
-        const int voxels_per_block = calculate_voxels_per_block(frame_threads);
-        dim3 threads_per_block(frame_threads, voxels_per_block);
-        DEBUG_ASSERT(threads_per_block.x * threads_per_block.y <= 1024);
-        const int receive_elements_batch_size = calculate_receive_elements_batch_size(voxels_per_block);
-
-        const int num_blocks = (n_output_voxels + voxels_per_block - 1) / voxels_per_block;
-        const int max_blocks_per_dim = (1 << 16) - 32;
-        const int grid_x = min(max_blocks_per_dim, num_blocks);
-        const int grid_y = (num_blocks + grid_x - 1) / grid_x;
-        const int grid_z = (n_receive_elements + receive_elements_batch_size - 1) / receive_elements_batch_size;
-        dim3 grid(grid_x, grid_y, grid_z);
+        if (n_frames == 0 || !use_inverted_kernel) return false;
+        if (inverted_layout_reason<StorageType>(d_channel_data, frame_stride, n_frames, interp_type, FPT) != nullptr) return false;
+        const InvertedLaunch cfg = inverted_launch_config(n_frames, n_output_voxels, n_receive_elements, FPT);
+        const dim3 grid = cfg.grid, threads_per_block = cfg.block;
+        const int receive_elements_batch_size = cfg.receive_elements_batch_size;
 
         const bool apod_flag = tukey_alpha > 0.0f;
         const bool nearest = interp_type == InterpolationType::NearestNeighbor;
@@ -1088,14 +1154,10 @@ __global__ void beamformKernelInvIQVJP(
         const float voxel_tx_delay_s = tx_arrival_delays[voxel_idx];
         const float aperture_radius = voxel_xyz.z / (2.0f * f_number);
         const float aperture_radius_squared = aperture_radius * aperture_radius;
-        for (unsigned int e = frame_tid; e < receive_elements_in_batch; e += num_frame_threads) {
-            const uint32_t receive_element_idx = receive_element_block_start_idx + e;
-            float2 tau_and_weight = calculateTxRxDelayAndApodization<UseApodization>(
-                rx_coords_m[receive_element_idx], voxel_xyz, aperture_radius_squared, aperture_radius,
-                voxel_tx_delay_s, sampling_freq_hz, inv_sound_speed_m_s, tukey_alpha);
-            if ((rx_delays_s != nullptr) && (tau_and_weight.x >= 0.0f)) tau_and_weight.x += rx_delays_s[receive_element_idx];
-            voxel_tau_and_apod_weights[voxel_tid * receive_elements_in_batch + e] = tau_and_weight;
-        }
+        fill_delay_table<UseApodization>(
+            voxel_tau_and_apod_weights, voxel_tid, receive_elements_in_batch, receive_element_block_start_idx,
+            frame_tid, num_frame_threads, rx_coords_m, rx_delays_s, voxel_xyz, aperture_radius_squared,
+            aperture_radius, voxel_tx_delay_s, sampling_freq_hz, inv_sound_speed_m_s, tukey_alpha);
     }
     if constexpr (NeedGradTau) {
         for (unsigned int i = tid; i < num_voxels_per_block * receive_elements_in_batch; i += n_threads) {
@@ -1121,21 +1183,9 @@ __global__ void beamformKernelInvIQVJP(
             const float sample_idx = (physical_tau_s - rx_start_s) * sampling_freq_hz;
             const uint32_t receive_element_idx = receive_element_block_start_idx + e;
 
-            // Taps (same bounds tests and rounding intrinsics as the forward): rows row0/row1
-            // with coefficients (1 - coef1)/coef1; nearest neighbour uses row0 only.
-            uint32_t row0, row1;
+            unsigned int row0, row1;
             float coef1;
-            if constexpr (interpType == InterpolationType::NearestNeighbor) {
-                if ((sample_idx < -0.5f) || (sample_idx > (n_samples - 0.5f))) continue;
-                row0 = __float2uint_rn(sample_idx);
-                row1 = row0;
-                coef1 = 0.0f;
-            } else {
-                if ((sample_idx < 0.0f) || (sample_idx > (n_samples - 1))) continue;
-                row0 = __float2uint_rd(sample_idx);
-                row1 = __float2uint_ru(sample_idx);
-                coef1 = sample_idx - (float)row0;
-            }
+            if (!resolve_taps<interpType>(sample_idx, n_samples, row0, row1, coef1)) continue;
             const float coef0 = 1.0f - coef1;
 
             // Complex weight W = w * exp(j*phi) as (cw, sw), once per element.
@@ -1301,34 +1351,13 @@ void _beamform_inverted_vjp(
     const bool need_tau = (d_grad_tx_arrivals != nullptr) || (d_grad_scan_coords != nullptr) ||
                           (d_grad_rx_coords != nullptr) || (d_grad_sound_speed != nullptr) ||
                           (d_grad_rx_start_s != nullptr) || (d_grad_rx_delays_s != nullptr);
-    if (!need_data && !need_tau) return;
-    if (interp_type == InterpolationType::Quadratic) {
-        throw std::runtime_error("beamform_vjp: quadratic interpolation has no backward kernel (use nearest or linear)");
+    if ((!need_data && !need_tau) || n_frames == 0) return;
+    if (const char* why = inverted_layout_reason<StorageType>(d_channel_data, frame_stride, n_frames, interp_type, FPT)) {
+        throw std::runtime_error(std::string("beamform_vjp needs the inverted-kernel layout: ") + why);
     }
-    if (n_frames == 0) return;
-    if (reinterpret_cast<std::uintptr_t>(d_channel_data) % 16 != 0) {
-        throw std::runtime_error("beamform_vjp: channel_data must be 16-byte aligned (not an offset view)");
-    }
-    if ((frame_stride * sizeof(StorageType)) % 16 != 0) {
-        throw std::runtime_error("beamform_vjp: channel_data.shape[2] (the frame stride) must keep every sample row "
-                                 "16-byte aligned: a multiple of " + std::to_string(16 / sizeof(StorageType)) + " frames");
-    }
-    if (((n_frames + FPT - 1) / FPT) * FPT > frame_stride) {
-        throw std::runtime_error("beamform_vjp: channel_data.shape[2] must leave room for a whole " + std::to_string(FPT) +
-                                 "-frame chunk past grad_out.shape[1] (pad the frame stride up to a multiple of " +
-                                 std::to_string(FPT) + ")");
-    }
-    const uint32_t n_chunks = (n_frames + FPT - 1) / FPT;
-    const int frame_threads = min(static_cast<int>(n_chunks), MAX_FRAME_THREADS_PER_BLOCK);
-    const int voxels_per_block = calculate_voxels_per_block(frame_threads);
-    dim3 threads_per_block(frame_threads, voxels_per_block);
-    const int receive_elements_batch_size = calculate_receive_elements_batch_size(voxels_per_block);
-    const int num_blocks = (n_output_voxels + voxels_per_block - 1) / voxels_per_block;
-    const int max_blocks_per_dim = (1 << 16) - 32;
-    const int grid_x = min(max_blocks_per_dim, num_blocks);
-    const int grid_y = (num_blocks + grid_x - 1) / grid_x;
-    const int grid_z = (n_receive_elements + receive_elements_batch_size - 1) / receive_elements_batch_size;
-    dim3 grid(grid_x, grid_y, grid_z);
+    const InvertedLaunch cfg = inverted_launch_config(n_frames, n_output_voxels, n_receive_elements, FPT);
+    const dim3 grid = cfg.grid, threads_per_block = cfg.block;
+    const int receive_elements_batch_size = cfg.receive_elements_batch_size;
     const float inv_sound_speed_m_s = 1.0f / sound_speed_m_s;
     const bool apod_flag = tukey_alpha > 0.0f;
     const bool nearest = interp_type == InterpolationType::NearestNeighbor;
@@ -1344,15 +1373,20 @@ void _beamform_inverted_vjp(
             receive_elements_batch_size, d_rx_delays_s, d_grad_rx_delays_s);
         checkCudaErrors(cudaGetLastError());
     };
-#define MACH_VJP_LAUNCH(APOD, INTERP)                                                                   \
-    if (need_data && need_tau) launch(beamformKernelInvIQVJP<StorageType, APOD, INTERP, FPT, true, true>);   \
-    else if (need_data)        launch(beamformKernelInvIQVJP<StorageType, APOD, INTERP, FPT, true, false>);  \
-    else                       launch(beamformKernelInvIQVJP<StorageType, APOD, INTERP, FPT, false, true>);
-    if (apod_flag && nearest)  { MACH_VJP_LAUNCH(true,  InterpolationType::NearestNeighbor) }
-    else if (apod_flag)        { MACH_VJP_LAUNCH(true,  InterpolationType::Linear) }
-    else if (nearest)          { MACH_VJP_LAUNCH(false, InterpolationType::NearestNeighbor) }
-    else                       { MACH_VJP_LAUNCH(false, InterpolationType::Linear) }
-#undef MACH_VJP_LAUNCH
+    // Instantiate on (apodization, interpolation) like the forward, then on which gradients are wanted.
+    auto dispatch = [&](auto apod, auto interp) {
+        constexpr bool A = decltype(apod)::value;
+        constexpr InterpolationType I = decltype(interp)::value;
+        if (need_data && need_tau) launch(beamformKernelInvIQVJP<StorageType, A, I, FPT, true, true>);
+        else if (need_data)        launch(beamformKernelInvIQVJP<StorageType, A, I, FPT, true, false>);
+        else                       launch(beamformKernelInvIQVJP<StorageType, A, I, FPT, false, true>);
+    };
+    using Nearest = std::integral_constant<InterpolationType, InterpolationType::NearestNeighbor>;
+    using Linear = std::integral_constant<InterpolationType, InterpolationType::Linear>;
+    if (apod_flag && nearest)  dispatch(std::true_type{}, Nearest{});
+    else if (apod_flag)        dispatch(std::true_type{}, Linear{});
+    else if (nearest)          dispatch(std::false_type{}, Nearest{});
+    else                       dispatch(std::false_type{}, Linear{});
     checkCudaErrors(cudaDeviceSynchronize());
 }
 
@@ -1442,12 +1476,6 @@ void _beamform_impl(
             modulation_freq_hz, tukey_alpha, interp_type, use_inverted_kernel, d_rx_delays_s)) {
         return;
     }
-    if (d_rx_delays_s != nullptr) {
-        throw std::runtime_error(
-            "rx_delays_s requires the inverted-kernel layout: complex64 data, nearest/linear interpolation, "
-            "channel_data.shape[2] a multiple of 4 frames >= n_frames, a 16-byte aligned base pointer, "
-            "and use_inverted_kernel=True");
-    }
 
     // Calculate block dimensions
     const int frames_per_block = min(n_frames, MAX_FRAME_THREADS_PER_BLOCK);
@@ -1520,7 +1548,7 @@ void _beamform_impl(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
-                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size, d_rx_delays_s
             );
         } else if (interp_type == InterpolationType::Linear) {
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, true, InterpolationType::Linear, StorageType>, CACHE_CONFIG));
@@ -1528,7 +1556,7 @@ void _beamform_impl(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
-                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size, d_rx_delays_s
             );
         } else { // Quadratic interpolation
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, true, InterpolationType::Quadratic, StorageType>, CACHE_CONFIG));
@@ -1536,7 +1564,7 @@ void _beamform_impl(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
-                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size, d_rx_delays_s
             );
         }
     } else {
@@ -1546,7 +1574,7 @@ void _beamform_impl(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
-                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size, d_rx_delays_s
             );
         } else if (interp_type == InterpolationType::Linear) {
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false, InterpolationType::Linear, StorageType>, CACHE_CONFIG));
@@ -1554,7 +1582,7 @@ void _beamform_impl(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
-                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size, d_rx_delays_s
             );
         } else { // Quadratic interpolation
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false, InterpolationType::Quadratic, StorageType>, CACHE_CONFIG));
@@ -1562,7 +1590,7 @@ void _beamform_impl(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
-                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size
+                f_number, tukey_alpha, rx_start_s, n_output_voxels, receive_elements_batch_size, d_rx_delays_s
             );
         }
     }
@@ -1660,6 +1688,27 @@ void check_dimensions(
  * @return int number of arrays on CPU
  * @throws std::runtime_error if any array is on an unsupported device
  */
+template<typename... Arrays>
+int check_devices(const Arrays&... arrays);
+
+/**
+ * @brief Validate an optional nanobind array's shape (-1 = any) and count it as a CPU array if it is one.
+ * @return 0 when absent, otherwise check_devices() of the array
+ */
+template<typename Opt>
+static int check_optional_array(const Opt& opt, const char* name, std::initializer_list<int64_t> expected) {
+    if (!opt) return 0;
+    bool ok = static_cast<size_t>(opt->ndim()) == expected.size();
+    size_t i = 0;
+    for (int64_t d : expected) { ok = ok && (d < 0 || opt->shape(i) == d); ++i; }
+    if (!ok) {
+        std::string want;
+        for (int64_t d : expected) want += (want.empty() ? "(" : ", ") + (d < 0 ? std::string("any") : std::to_string(d));
+        throw std::runtime_error(std::string(name) + " must have shape " + want + "), got " + shape_to_string(*opt));
+    }
+    return check_devices(*opt);
+}
+
 template<typename... Arrays>
 int check_devices(const Arrays&... arrays) {
     int cpu_count = 0;
@@ -1764,12 +1813,7 @@ void beamform(
     check_dimensions(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, out,
         n_receive_elements, n_samples, n_output_voxels, n_frames);
     int cpu_count = check_devices(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, out);
-    if (rx_delays_s) {
-        if (rx_delays_s->shape(0) != static_cast<int64_t>(n_receive_elements)) {
-            throw std::runtime_error("rx_delays_s must have shape (n_rx,) matching rx_coords_m, got " + shape_to_string(*rx_delays_s));
-        }
-        cpu_count += check_devices(*rx_delays_s);
-    }
+    cpu_count += check_optional_array(rx_delays_s, "rx_delays_s", {static_cast<int64_t>(n_receive_elements)});
 
 
     // If all arrays are already on CUDA, use the direct kernel call
@@ -1992,14 +2036,8 @@ void beamform_fp16(
         throw std::runtime_error("beamform_fp16: scan_coords_m, tx_wave_arrivals_s, and out "
                                  "must agree on n_output_voxels");
     }
-    int cpu_count = check_devices(channel_data, rx_coords_m, scan_coords_m,
-                                  tx_wave_arrivals_s, out);
-    if (rx_delays_s) {
-        if (rx_delays_s->shape(0) != static_cast<int64_t>(n_receive_elements)) {
-            throw std::runtime_error("rx_delays_s must have shape (n_rx,) matching rx_coords_m, got " + shape_to_string(*rx_delays_s));
-        }
-        cpu_count += check_devices(*rx_delays_s);
-    }
+    int cpu_count = check_devices(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, out);
+    cpu_count += check_optional_array(rx_delays_s, "rx_delays_s", {static_cast<int64_t>(n_receive_elements)});
     if (cpu_count != 0) {
         throw std::runtime_error("beamform_fp16 requires all arrays on GPU "
                                  "(found " + std::to_string(cpu_count) + " CPU array(s))");
@@ -2032,21 +2070,21 @@ void beamform_vjp(
     nb::ndarray<const float, nb::shape<-1, 3>, nb::c_contig> scan_coords_m,
     nb::ndarray<const float, nb::ndim<1>, nb::c_contig> tx_wave_arrivals_s,
     nb::ndarray<const std::complex<float>, nb::ndim<2>, nb::c_contig> grad_out,
-    std::optional<nb::ndarray<std::complex<float>, nb::ndim<3>, nb::c_contig>> grad_channel_data,
-    std::optional<nb::ndarray<float, nb::ndim<1>, nb::c_contig>> grad_tx_wave_arrivals_s,
-    std::optional<nb::ndarray<float, nb::shape<-1, 3>, nb::c_contig>> grad_scan_coords_m,
-    std::optional<nb::ndarray<float, nb::shape<-1, 3>, nb::c_contig>> grad_rx_coords_m,
-    std::optional<nb::ndarray<double, nb::ndim<1>, nb::c_contig>> grad_sound_speed_m_s,
-    std::optional<nb::ndarray<double, nb::ndim<1>, nb::c_contig>> grad_rx_start_s,
-    std::optional<nb::ndarray<const float, nb::ndim<1>, nb::c_contig>> rx_delays_s,
-    std::optional<nb::ndarray<float, nb::ndim<1>, nb::c_contig>> grad_rx_delays_s,
     float f_number,
     float rx_start_s,
     float sampling_freq_hz,
     float sound_speed_m_s,
     float modulation_freq_hz,
     float tukey_alpha,
-    InterpolationType interp_type
+    InterpolationType interp_type,
+    std::optional<nb::ndarray<const float, nb::ndim<1>, nb::c_contig>> rx_delays_s,
+    std::optional<nb::ndarray<std::complex<float>, nb::ndim<3>, nb::c_contig>> grad_channel_data,
+    std::optional<nb::ndarray<float, nb::ndim<1>, nb::c_contig>> grad_tx_wave_arrivals_s,
+    std::optional<nb::ndarray<float, nb::shape<-1, 3>, nb::c_contig>> grad_scan_coords_m,
+    std::optional<nb::ndarray<float, nb::shape<-1, 3>, nb::c_contig>> grad_rx_coords_m,
+    std::optional<nb::ndarray<double, nb::ndim<1>, nb::c_contig>> grad_sound_speed_m_s,
+    std::optional<nb::ndarray<double, nb::ndim<1>, nb::c_contig>> grad_rx_start_s,
+    std::optional<nb::ndarray<float, nb::ndim<1>, nb::c_contig>> grad_rx_delays_s
 ) {
     const size_t n_receive_elements = rx_coords_m.shape(0);
     const size_t n_samples = channel_data.shape(1);
@@ -2054,40 +2092,20 @@ void beamform_vjp(
     const size_t n_output_voxels = scan_coords_m.shape(0);
     const size_t n_frames = grad_out.shape(1);
 
-    if (channel_data.shape(0) != static_cast<int64_t>(n_receive_elements)) {
-        throw std::runtime_error("beamform_vjp: channel_data.shape[0] must equal rx_coords_m.shape[0], got " +
-                                 shape_to_string(channel_data) + " and " + shape_to_string(rx_coords_m));
-    }
-    if (tx_wave_arrivals_s.shape(0) != static_cast<int64_t>(n_output_voxels) ||
-        grad_out.shape(0) != static_cast<int64_t>(n_output_voxels)) {
-        throw std::runtime_error("beamform_vjp: scan_coords_m, tx_wave_arrivals_s and grad_out must agree on n_output_voxels");
-    }
-    if (n_frames > frame_stride) {
-        throw std::runtime_error("beamform_vjp: grad_out.shape[1] (n_frames) must not exceed channel_data.shape[2]");
-    }
+    // grad_out plays the role of `out`: (n_output_voxels, n_frames) with n_frames <= frame_stride
+    check_dimensions(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, grad_out,
+                     n_receive_elements, n_samples, n_output_voxels, n_frames);
+    const auto n_rx = static_cast<int64_t>(n_receive_elements);
+    const auto n_vox = static_cast<int64_t>(n_output_voxels);
     int cpu_count = check_devices(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, grad_out);
-    auto check_grad = [&](const auto& opt, const char* name, auto expected_shape) {
-        if (!opt) return;
-        if (!expected_shape(*opt)) {
-            throw std::runtime_error(std::string("beamform_vjp: ") + name + " has the wrong shape " + shape_to_string(*opt));
-        }
-        cpu_count += check_devices(*opt);
-    };
-    check_grad(grad_channel_data, "grad_channel_data", [&](const auto& a) {
-        return a.shape(0) == channel_data.shape(0) && a.shape(1) == channel_data.shape(1) && a.shape(2) == channel_data.shape(2);
-    });
-    check_grad(grad_tx_wave_arrivals_s, "grad_tx_wave_arrivals_s", [&](const auto& a) { return a.shape(0) == static_cast<int64_t>(n_output_voxels); });
-    check_grad(grad_scan_coords_m, "grad_scan_coords_m", [&](const auto& a) { return a.shape(0) == static_cast<int64_t>(n_output_voxels); });
-    check_grad(grad_rx_coords_m, "grad_rx_coords_m", [&](const auto& a) { return a.shape(0) == static_cast<int64_t>(n_receive_elements); });
-    check_grad(grad_sound_speed_m_s, "grad_sound_speed_m_s", [&](const auto& a) { return a.shape(0) == 1; });
-    check_grad(grad_rx_start_s, "grad_rx_start_s", [&](const auto& a) { return a.shape(0) == 1; });
-    check_grad(grad_rx_delays_s, "grad_rx_delays_s", [&](const auto& a) { return a.shape(0) == static_cast<int64_t>(n_receive_elements); });
-    if (rx_delays_s) {
-        if (rx_delays_s->shape(0) != static_cast<int64_t>(n_receive_elements)) {
-            throw std::runtime_error("beamform_vjp: rx_delays_s must have shape (n_rx,), got " + shape_to_string(*rx_delays_s));
-        }
-        cpu_count += check_devices(*rx_delays_s);
-    }
+    cpu_count += check_optional_array(grad_channel_data, "grad_channel_data", {n_rx, static_cast<int64_t>(n_samples), static_cast<int64_t>(frame_stride)});
+    cpu_count += check_optional_array(grad_tx_wave_arrivals_s, "grad_tx_wave_arrivals_s", {n_vox});
+    cpu_count += check_optional_array(grad_scan_coords_m, "grad_scan_coords_m", {n_vox, 3});
+    cpu_count += check_optional_array(grad_rx_coords_m, "grad_rx_coords_m", {n_rx, 3});
+    cpu_count += check_optional_array(grad_sound_speed_m_s, "grad_sound_speed_m_s", {1});
+    cpu_count += check_optional_array(grad_rx_start_s, "grad_rx_start_s", {1});
+    cpu_count += check_optional_array(grad_rx_delays_s, "grad_rx_delays_s", {n_rx});
+    cpu_count += check_optional_array(rx_delays_s, "rx_delays_s", {n_rx});
     if (cpu_count != 0) {
         throw std::runtime_error("beamform_vjp requires all arrays on GPU (found " + std::to_string(cpu_count) + " CPU array(s))");
     }
@@ -2199,19 +2217,19 @@ NB_MODULE(_cuda_impl, m) {
         "scan_coords_m"_a.noconvert(),
         "tx_wave_arrivals_s"_a.noconvert(),
         "grad_out"_a.noconvert(),
-        "grad_channel_data"_a.noconvert() = nb::none(),
-        "grad_tx_wave_arrivals_s"_a.noconvert() = nb::none(),
-        "grad_scan_coords_m"_a.noconvert() = nb::none(),
-        "grad_rx_coords_m"_a.noconvert() = nb::none(),
-        "grad_sound_speed_m_s"_a.noconvert() = nb::none(),
-        "grad_rx_start_s"_a.noconvert() = nb::none(),
-        "rx_delays_s"_a.noconvert() = nb::none(),
-        "grad_rx_delays_s"_a.noconvert() = nb::none(),
         "f_number"_a,
         "rx_start_s"_a,
         "sampling_freq_hz"_a,
         "sound_speed_m_s"_a,
         "modulation_freq_hz"_a,
         "tukey_alpha"_a = 0.5f,
-        "interp_type"_a = InterpolationType::Linear);
+        "interp_type"_a = InterpolationType::Linear,
+        "rx_delays_s"_a.noconvert() = nb::none(),
+        "grad_channel_data"_a.noconvert() = nb::none(),
+        "grad_tx_wave_arrivals_s"_a.noconvert() = nb::none(),
+        "grad_scan_coords_m"_a.noconvert() = nb::none(),
+        "grad_rx_coords_m"_a.noconvert() = nb::none(),
+        "grad_sound_speed_m_s"_a.noconvert() = nb::none(),
+        "grad_rx_start_s"_a.noconvert() = nb::none(),
+        "grad_rx_delays_s"_a.noconvert() = nb::none());
 }

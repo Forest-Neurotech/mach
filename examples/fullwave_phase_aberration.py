@@ -8,7 +8,9 @@ delay gradient of ``mach.autograd.beamform`` (``rx_delays_s``).
 
 Ground truth comes two ways: the straight-ray travel-time integral through the layer, and the
 arrival-time profile measured on a lone wire target simulated through the same layer (which also
-carries the transmit-side distortion, so it is the more honest reference). Four solver runs:
+carries the transmit-side distortion, so it is the more honest reference). The estimator ascends
+the image sharpness (``mach.autograd.sharpness``) below the layer with a coarse-to-fine smooth
+parametrisation of the screen. Four solver runs:
 
     control      phantom, no layer
     aberrated    phantom + layer
@@ -34,7 +36,7 @@ from fullwave2_ultra import io_dat, sim, solver, stability
 from scipy.ndimage import gaussian_filter
 from scipy.signal import butter, hilbert, sosfiltfilt
 
-from mach.autograd import beamform
+from mach.autograd import beamform, sharpness
 
 # ----------------------------------------------------------------------------- configuration
 C0 = 1540.0
@@ -90,7 +92,7 @@ def grid_shape():
 
 
 def element_columns():
-    """1-based interior column indices of every element's active cells and centres (n_rx, cells)."""
+    """1-based interior column indices of every element's active cells (n_rx, cells)."""
     n_x, _ = grid_shape()
     aperture = N_RX * PITCH_CELLS
     i0 = (n_x - aperture) // 2 + 1 + (PITCH_CELLS - ELEMENT_CELLS) // 2
@@ -268,13 +270,13 @@ def scan_grid(x_mm=(-15, 15, 0.1), z_mm=(3, 38, 0.05)):
     return x, z, torch.as_tensor(scan, device=DEV)
 
 
-def image(chan, rx, scan, rx_start_s, delays=None, fs=None):
-    tx = (scan[:, 2] / C0).to(torch.float32)
+def image(chan, rx, scan, tx_arrivals_s, rx_start_s, fs, delays=None):
+    """Beamform one frame; ``delays`` (n_rx,) float32 tensor applies a receive screen."""
     out = beamform(
         chan,
         rx,
         scan,
-        tx,
+        tx_arrivals_s,
         rx_start_s=rx_start_s,
         sampling_freq_hz=fs,
         f_number=1.0,
@@ -287,13 +289,7 @@ def image(chan, rx, scan, rx_start_s, delays=None, fs=None):
     return out[:, 0]
 
 
-def sharpness(img, mask):
-    intensity = img.abs().pow(2)[mask]
-    return intensity.pow(2).sum() / intensity.sum().pow(2)
-
-
-def envelope_db(img, nx, nz):
-    env = img.detach().abs().reshape(nx, nz).T.cpu().numpy()
+def to_db(env):
     return 20 * np.log10(env / env.max() + 1e-12)
 
 
@@ -317,6 +313,20 @@ def wire_fwhm_mm(env, x, z, wire):
     half = profile.max() / 2
     above = np.nonzero(profile >= half)[0]
     return (x[xs][above[-1]] - x[xs][above[0]]) * 1e3, profile.max()
+
+
+def image_metrics(env, x, z):
+    """Cyst contrast and, per wire, lateral FWHM (mm) and peak relative to the control image."""
+    wires = {k: {w: wire_fwhm_mm(e, x, z, w) for w in WIRES} for k, e in env.items()}
+
+    def label(w):
+        return f"{w[0] * 1e3:.0f},{w[1] * 1e3:.0f}"
+
+    return {
+        "cyst_contrast_db": {k: cyst_contrast_db(e, x, z) for k, e in env.items()},
+        "wire_fwhm_mm": {k: {label(w): wires[k][w][0] for w in WIRES} for k in env},
+        "wire_peak_rel": {k: {label(w): wires[k][w][1] / wires["control"][w][1] for w in WIRES} for k in env},
+    }
 
 
 # ----------------------------------------------------------------------------- measured screen
@@ -359,65 +369,62 @@ def highpass(v, sigma_elements=HIGHPASS_SIGMA_ELEMENTS):
     return v - gaussian_filter(v, sigma_elements, mode="nearest")
 
 
-class SmoothScreen(torch.nn.Module):
-    """Per-element delays parametrised through a Gaussian smoother of ``sigma`` elements: a
-    smoothness prior matching the physical screen, which keeps the sharpness objective from
-    growing element-to-element alternating patterns that raise sharpness but destroy contrast."""
-
-    def __init__(self, n, sigma, init=None):
-        super().__init__()
-        self.p = torch.nn.Parameter(torch.zeros(n, device=DEV) if init is None else init.clone())
-        k = torch.arange(-int(3 * sigma), int(3 * sigma) + 1, device=DEV, dtype=torch.float32)
-        k = torch.exp(-0.5 * (k / sigma) ** 2)
-        self.register_buffer("kernel", (k / k.sum()).view(1, 1, -1))
-
-    def forward(self):
-        pad = self.kernel.shape[-1] // 2
-        x = torch.nn.functional.pad(self.p.view(1, 1, -1), (pad, pad), mode="replicate")
-        return torch.nn.functional.conv1d(x, self.kernel).view(-1)
+def measure_screen(rf, fs, rx_np, peak):
+    """Receive screen measured on the lone wire; the control measurement removes the geometric bias."""
+    screen = measured_delays(rf["point_aber"], fs, rx_np, peak) - measured_delays(rf["point_ctrl"], fs, rx_np, peak)
+    return screen - screen.mean()
 
 
-# ----------------------------------------------------------------------------- main
-def main():  # noqa: C901
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--out-dir", default="results/fullwave_aberration")
-    parser.add_argument("--rms-ns", type=float, default=50.0, help="target RMS of the straight-ray screen")
-    parser.add_argument(
-        "--coherence-mm", type=float, default=5.0, help="lateral coherence length of the screen (autocorrelation FWHM)"
-    )
-    parser.add_argument("--reuse", action="store_true", help="reuse existing solver outputs in out-dir")
-    parser.add_argument("--iterations", type=int, default=150, help="iterations per stage")
-    parser.add_argument(
-        "--blank-us", type=float, default=2.5, help="blank the transmit pulse for this long after its peak"
-    )
-    parser.add_argument("--hp-mhz", type=float, default=1.0, help="RF high-pass cutoff (MHz); 0 disables")
-    parser.add_argument(
-        "--sigma-stages", default="8,3", help="coarse-to-fine smoothing widths (elements) of the screen parametrisation"
-    )
-    parser.add_argument("--layer", choices=sorted(LAYERS), default="thin")
-    parser.add_argument("--objective", choices=["sharpness", "energy"], default="sharpness")
-    parser.add_argument(
-        "--roi",
-        choices=["full", "wire30"],
-        default="full",
-        help="region the objective is evaluated on: the whole image below the layer, "
-        "or a 10 x 6 mm patch around the (0, 30 mm) wire (an isoplanatic patch)",
-    )
-    args = parser.parse_args()
-    os.makedirs(args.out_dir, exist_ok=True)
+# ----------------------------------------------------------------------------- estimation
+def gaussian_smooth(p, sigma):
+    """Smooth a per-element vector with a Gaussian of ``sigma`` elements (replicate edges).
+
+    Parametrising the screen this way is a smoothness prior matching the physical screen: a free
+    per-element parametrisation grows element-to-element alternating patterns that raise sharpness
+    but destroy contrast.
+    """
+    k = torch.arange(-int(3 * sigma), int(3 * sigma) + 1, device=p.device, dtype=p.dtype)
+    k = torch.exp(-0.5 * (k / sigma) ** 2)
+    k = (k / k.sum()).view(1, 1, -1)
+    pad = k.shape[-1] // 2
+    x = torch.nn.functional.pad(p.view(1, 1, -1), (pad, pad), mode="replicate")
+    return torch.nn.functional.conv1d(x, k).view(-1)
+
+
+def estimate_screen(im, mask, sigma_stages, iterations, reference):
+    """Sharpness ascent on the receive screen, coarse to fine.
+
+    ``im(delays)`` beamforms the aberrated data with a screen; ``reference`` (s) is the measured
+    screen, only used to report the high-pass residual. Returns the screen (s, tensor) and the
+    per-iteration (sharpness, residual) history.
+    """
+    init = torch.zeros(N_RX, device=DEV)  # delays in ns; the realised screen carries over between stages
+    history = []
+    for stage, sigma in enumerate(sigma_stages):
+        p = init.clone().requires_grad_(True)
+        opt = torch.optim.Adam([p], lr=3.0 if stage == 0 else 1.0)
+        sched = torch.optim.lr_scheduler.ExponentialLR(opt, gamma=0.98)
+        for it in range(iterations):
+            opt.zero_grad()
+            screen = gaussian_smooth(p, sigma)
+            s = sharpness(im(screen * 1e-9), mask)
+            (-s).backward()
+            resid = highpass(screen.detach().cpu().numpy() * 1e-9 - reference).std()
+            history.append((s.item(), resid))
+            if it % 50 == 0 or it == iterations - 1:
+                print(
+                    f"  stage {stage} (sigma {sigma:g}) it {it:3d}: sharpness {history[-1][0]:.3e}  high-pass residual vs measured {resid * 1e9:5.1f} ns"
+                )
+            opt.step()
+            sched.step()
+        init = gaussian_smooth(p, sigma).detach()
+    return init * 1e-9, np.array(history)
+
+
+# ----------------------------------------------------------------------------- driver
+def simulate_runs(args, delta_c):
+    """The four solver runs of a scenario; returns per-run raw RF (n_rx, n_samples) and the sampling rate."""
     rng = np.random.default_rng(0)
-
-    n_x, n_y = grid_shape()
-    print(f"grid {n_x}x{n_y} interior at {DX * 1e6:.1f} um, {N_RX} elements, pitch {PITCH_CELLS * DX * 1e3:.3f} mm")
-    delta_c, screen_ray = aberrating_layer(
-        np.random.default_rng(1), args.layer, args.rms_ns * 1e-9, args.coherence_mm * 1e-3
-    )
-    layer_z = LAYERS[args.layer][:2]
-    print(
-        f"layer: delta c in [{delta_c.min():+.0f}, {delta_c.max():+.0f}] m/s, straight-ray screen RMS {screen_ray.std() * 1e9:.1f} ns, "
-        f"coherence length {coherence_length_m(screen_ray, rx_coords_m()[:, 0]) * 1e3:.1f} mm (target {args.coherence_mm:.1f})"
-    )
-
     cmap_ph, rmap_ph = base_maps(rng, speckle=True, wires=WIRES, cyst=CYST)
     cmap_pt, rmap_pt = base_maps(rng, speckle=False, wires=[LONE_WIRE], cyst=None)
     runs = {
@@ -426,164 +433,236 @@ def main():  # noqa: C901
         "point_ctrl": (cmap_pt, rmap_pt),
         "point_aber": (cmap_pt + delta_c, rmap_pt),
     }
-    rf, fs, meta = {}, None, None
+    rf = {}
     for name, (cmap, rmap) in runs.items():
         rf[name], fs, meta = run_solver(os.path.join(args.out_dir, name), cmap, rmap, reuse=args.reuse)
     print(
         f"fs = {fs / 1e6:.1f} MHz, {rf['control'].shape[1]} samples, dT = {meta['dT'] * 1e9:.2f} ns, cfl = {meta['cfl']:.3f}"
     )
+    return rf, fs
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--out-dir", default="results/fullwave_aberration")
+    parser.add_argument("--layer", choices=sorted(LAYERS), default="thin")
+    parser.add_argument("--rms-ns", type=float, default=50.0, help="target RMS of the straight-ray screen")
+    parser.add_argument(
+        "--coherence-mm", type=float, default=5.0, help="lateral coherence length of the screen (autocorrelation FWHM)"
+    )
+    parser.add_argument("--reuse", action="store_true", help="reuse existing solver outputs in out-dir")
+    parser.add_argument("--iterations", type=int, default=150, help="iterations per stage")
+    parser.add_argument(
+        "--sigma-stages",
+        type=float,
+        nargs="+",
+        default=[8.0, 3.0],
+        help="coarse-to-fine smoothing widths (elements) of the screen parametrisation",
+    )
+    parser.add_argument(
+        "--blank-us", type=float, default=2.5, help="blank the transmit pulse for this long after its peak"
+    )
+    parser.add_argument("--hp-mhz", type=float, default=1.0, help="RF high-pass cutoff (MHz); 0 disables")
+    return parser.parse_args()
+
+
+def plot_bmode(env, x, z, metrics, layer_z, title, path):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    extent = [x[0] * 1e3, x[-1] * 1e3, z[-1] * 1e3, z[0] * 1e3]
+    titles = {
+        "control": "no aberrating layer",
+        "aberrated": "aberrated, uncorrected",
+        "estimated": "corrected with estimated screen",
+        "measured": "corrected with measured screen",
+    }
+    fig, axes = plt.subplots(1, 4, figsize=(20, 7.3), sharey=True)
+    for ax, k in zip(axes, titles, strict=True):
+        ax.imshow(to_db(env[k]), extent=extent, cmap="gray", vmin=-55, vmax=0, aspect="equal")
+        ax.set_title(
+            f"{titles[k]}\ncyst contrast {metrics['cyst_contrast_db'][k]:.1f} dB, wire(0,20) FWHM {metrics['wire_fwhm_mm'][k]['0,20']:.2f} mm",
+            fontsize=10,
+        )
+        ax.set_xlabel("x (mm)")
+        ax.axhspan(layer_z[0] * 1e3, layer_z[1] * 1e3, color="tab:orange", alpha=0.12, lw=0)
+    axes[0].set_ylabel("z (mm)")
+    fig.suptitle(title, fontsize=11)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(path, dpi=110)
+
+
+def plot_screens(screens, x_el, history, delta_c, layer_z, metrics, path):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    xe = x_el * 1e3
+    rms, coh, res = metrics["screen_rms_ns"], metrics["coherence_length_mm"], metrics["residual_rms_ns"]
+    fig, axes = plt.subplots(2, 2, figsize=(14, 8))
+    ax = axes[0, 0]
+    ax.plot(
+        xe,
+        screens["straight_ray"] * 1e9,
+        color="0.5",
+        label=f"straight-ray integral (RMS {rms['straight_ray']:.0f} ns, coherence {coh['straight_ray']:.1f} mm)",
+    )
+    ax.plot(
+        xe,
+        screens["measured"] * 1e9,
+        color="k",
+        label=f"measured on lone wire (RMS {rms['measured']:.0f} ns, coherence {coh['measured']:.1f} mm)",
+    )
+    ax.plot(
+        xe,
+        screens["estimated"] * 1e9,
+        color="tab:red",
+        label=f"estimated by sharpness ascent (RMS {rms['estimated']:.0f} ns)",
+    )
+    ax.set_xlabel("element x (mm)")
+    ax.set_ylabel("receive delay (ns)")
+    ax.set_title("receive delay screen (mean removed)")
+    ax.legend(fontsize=9)
+    ax = axes[0, 1]
+    ax.plot(
+        xe,
+        highpass(screens["measured"]) * 1e9,
+        color="k",
+        label=f"measured, high-pass (RMS {res['measured_highpass_rms']:.0f} ns)",
+    )
+    ax.plot(
+        xe,
+        highpass(screens["estimated"]) * 1e9,
+        color="tab:red",
+        label=f"estimated, high-pass (residual RMS {res['est_vs_measured_highpass']:.1f} ns, corr {res['highpass_correlation']:.2f})",
+    )
+    ax.axhline(0, color="k", lw=0.5)
+    ax.set_xlabel("element x (mm)")
+    ax.set_ylabel("delay (ns)")
+    ax.set_title(
+        f"components smoother than {HIGHPASS_SIGMA_ELEMENTS * PITCH_CELLS * DX * 1e3:.0f} mm removed from both\n"
+        f"(raw screens: correlation {res['raw_correlation']:.2f}, regression slope {res['regression_slope']:.2f})",
+        fontsize=10,
+    )
+    ax.legend(fontsize=9)
+    ax = axes[1, 0]
+    ax.plot(history[:, 0], color="tab:blue")
+    ax.set_xlabel("iteration")
+    ax.set_ylabel("sharpness", color="tab:blue")
+    ax2 = ax.twinx()
+    ax2.plot(history[:, 1] * 1e9, color="tab:red")
+    ax2.set_ylabel("high-pass residual RMS vs measured (ns)", color="tab:red")
+    ax.set_title("convergence")
+    ax = axes[1, 1]
+    n_x, n_y = grid_shape()
+    zl = z_of_row(np.arange(1, n_y + 1)) * 1e3
+    sel = zl < layer_z[1] * 1e3 + 2.5
+    im = ax.imshow(
+        delta_c[:, sel].T,
+        extent=[x_of_col(1) * 1e3, x_of_col(n_x) * 1e3, zl[sel][-1], zl[sel][0]],
+        cmap="RdBu_r",
+        vmin=-np.abs(delta_c).max(),
+        vmax=np.abs(delta_c).max(),
+        aspect="auto",
+    )
+    ax.set_xlabel("x (mm)")
+    ax.set_ylabel("z (mm)")
+    ax.set_title("aberrating layer: sound-speed deviation (m/s)")
+    fig.colorbar(im, ax=ax)
+    fig.tight_layout()
+    fig.savefig(path, dpi=110)
+
+
+def main():
+    args = parse_args()
+    os.makedirs(args.out_dir, exist_ok=True)
+    layer_z = LAYERS[args.layer][:2]
+    n_x, n_y = grid_shape()
     rx_np = rx_coords_m()
-    rx = torch.as_tensor(rx_np, device=DEV)
-    peak = transmit_peak_frame(rf["control"], fs)
-    rx_start_s = -peak / fs
-    for k in rf:
-        rf[k] = bandpass(highpass_rf(blank_transmit(rf[k], fs, peak, args.blank_us), fs, args.hp_mhz * 1e6), fs)
-    chan = {k: to_iq(v, fs) for k, v in rf.items()}
-
-    # measured screen from the lone wire (aberrated minus control removes geometric bias)
-    lag_aber = measured_delays(rf["point_aber"], fs, rx_np, peak)
-    lag_ctrl = measured_delays(rf["point_ctrl"], fs, rx_np, peak)
-    screen_meas = lag_aber - lag_ctrl
-    screen_meas -= screen_meas.mean()
-    screen_ray_c = screen_ray - screen_ray.mean()
+    x_el = rx_np[:, 0]
+    delta_c, screen_ray = aberrating_layer(
+        np.random.default_rng(1), args.layer, args.rms_ns * 1e-9, args.coherence_mm * 1e-3
+    )
+    screen_ray -= screen_ray.mean()
+    print(f"grid {n_x}x{n_y} interior at {DX * 1e6:.1f} um, {N_RX} elements, pitch {PITCH_CELLS * DX * 1e3:.3f} mm")
     print(
-        f"measured screen RMS {screen_meas.std() * 1e9:.1f} ns; straight-ray vs measured RMS diff "
-        f"{(screen_meas - screen_ray_c).std() * 1e9:.1f} ns (after detrend: {detrend(screen_meas - screen_ray_c, rx_np[:, 0]).std() * 1e9:.1f} ns)"
+        f"layer: delta c in [{delta_c.min():+.0f}, {delta_c.max():+.0f}] m/s, straight-ray screen RMS {screen_ray.std() * 1e9:.1f} ns, "
+        f"coherence length {coherence_length_m(screen_ray, x_el) * 1e3:.1f} mm (target {args.coherence_mm:.1f})"
     )
 
-    # imaging + estimation
+    rf, fs = simulate_runs(args, delta_c)
+    peak = transmit_peak_frame(rf["control"], fs)
+    rx_start_s = -peak / fs
+    screen_meas = measure_screen(rf, fs, rx_np, peak)
+    print(
+        f"measured screen RMS {screen_meas.std() * 1e9:.1f} ns; straight-ray vs measured RMS diff "
+        f"{(screen_meas - screen_ray).std() * 1e9:.1f} ns (after detrend: {detrend(screen_meas - screen_ray, x_el).std() * 1e9:.1f} ns)"
+    )
+    chan = {
+        k: to_iq(bandpass(highpass_rf(blank_transmit(v, fs, peak, args.blank_us), fs, args.hp_mhz * 1e6), fs), fs)
+        for k, v in rf.items()
+    }
+
     x, z, scan = scan_grid()
     nx, nz = x.size, z.size
-    scan_np = scan.cpu().numpy()
-    below_layer = scan_np[:, 2] > layer_z[1] + 1.5e-3
-    if args.roi == "wire30":
-        below_layer &= (np.abs(scan_np[:, 0]) < 5e-3) & (np.abs(scan_np[:, 2] - 30e-3) < 3e-3)
-    mask = torch.as_tensor(below_layer, device=DEV)
-    objective = sharpness if args.objective == "sharpness" else (lambda img, m: img.abs().pow(2)[m].sum() * 1e-9)
-    zero = torch.zeros(N_RX, device=DEV)
+    rx = torch.as_tensor(rx_np, device=DEV)
+    tx = (scan[:, 2] / C0).to(torch.float32)  # plane wave; independent of the screen, computed once
+    mask = scan[:, 2] > layer_z[1] + 1.5e-3  # objective region: below the layer
+
+    def im(delays, key="aberrated"):
+        d = None if delays is None else torch.as_tensor(delays, device=DEV, dtype=torch.float32)
+        return image(chan[key], rx, scan, tx, rx_start_s, fs, d)
+
     with torch.no_grad():
-        img = {
-            "control": image(chan["control"], rx, scan, rx_start_s, zero, fs),
-            "aberrated": image(chan["aberrated"], rx, scan, rx_start_s, zero, fs),
-            "measured": image(
-                chan["aberrated"],
-                rx,
-                scan,
-                rx_start_s,
-                torch.as_tensor(screen_meas, device=DEV, dtype=torch.float32),
-                fs,
-            ),
-        }
-    history = []
-    t_start = time.time()
-    init = None
-    for stage, sigma in enumerate(float(v) for v in args.sigma_stages.split(",")):
-        screen = SmoothScreen(N_RX, sigma, init)  # delays in ns
-        opt = torch.optim.Adam(screen.parameters(), lr=3.0 if stage == 0 else 1.0)
-        sched = torch.optim.lr_scheduler.ExponentialLR(opt, gamma=0.98)
-        for it in range(args.iterations):
-            opt.zero_grad()
-            s = objective(image(chan["aberrated"], rx, scan, rx_start_s, screen() * 1e-9, fs), mask)
-            (-s).backward()
-            est = screen().detach().cpu().numpy() * 1e-9
-            resid = highpass(est - screen_meas).std()
-            history.append((float(s), resid))
-            if it % 50 == 0 or it == args.iterations - 1:
-                print(
-                    f"  stage {stage} (sigma {sigma:g}) it {it:3d}: {args.objective} {float(s):.3e}  "
-                    f"high-pass residual vs measured {resid * 1e9:5.1f} ns"
-                )
-            opt.step()
-            sched.step()
-        init = screen().detach()  # carry the realised screen (not the raw parameters) into the finer stage
-    print(f"estimation: {len(history)} iterations in {time.time() - t_start:.1f} s")
-    est = screen().detach() * 1e-9
+        img = {"control": im(None, "control"), "aberrated": im(None), "measured": im(screen_meas)}
+    est, history = estimate_screen(im, mask, args.sigma_stages, args.iterations, screen_meas)
+    print(f"estimation: {len(history)} iterations")
+    est_np = est.cpu().numpy()
+    est_np -= est_np.mean()
     with torch.no_grad():
-        img["estimated"] = image(chan["aberrated"], rx, scan, rx_start_s, est.float(), fs)
-        sharp = {k: float(sharpness(v, mask)) for k, v in img.items()}
+        img["estimated"] = im(est)
+        sharp = {k: sharpness(v, mask).item() for k, v in img.items()}
         # objective landscape along the measured-screen direction (alpha * measured screen)
         landscape = {}
         for alpha in (-0.5, 0.0, 0.5, 0.75, 1.0, 1.25, 1.5):
-            im_a = image(
-                chan["aberrated"],
-                rx,
-                scan,
-                rx_start_s,
-                torch.as_tensor(alpha * screen_meas, device=DEV, dtype=torch.float32),
-                fs,
-            )
+            im_a = {0.0: img["aberrated"], 1.0: img["measured"]}.get(alpha)
+            if im_a is None:
+                im_a = im(alpha * screen_meas)
             landscape[f"{alpha:+.2f}"] = {
-                "sharpness": float(sharpness(im_a, mask)),
-                "energy": float(im_a.abs().pow(2)[mask].sum()),
+                "sharpness": sharpness(im_a, mask).item(),
+                "energy": im_a.abs().pow(2)[mask].sum().item(),
             }
-    est_np = est.cpu().numpy()
-    est_np -= est_np.mean()
 
-    # metrics
     env = {k: np.abs(v.reshape(nx, nz).T.cpu().numpy()) for k, v in img.items()}
+    screens = {"straight_ray": screen_ray, "measured": screen_meas, "estimated": est_np}
     metrics = {
-        "screen_rms_ns": {
-            "straight_ray": screen_ray_c.std() * 1e9,
-            "measured": screen_meas.std() * 1e9,
-            "estimated": est_np.std() * 1e9,
-        },
+        "screen_rms_ns": {k: v.std() * 1e9 for k, v in screens.items()},
         "coherence_length_mm": {
             "target": args.coherence_mm,
-            "straight_ray": coherence_length_m(screen_ray_c, rx_np[:, 0]) * 1e3,
-            "measured": coherence_length_m(screen_meas, rx_np[:, 0]) * 1e3,
-            "estimated": coherence_length_m(est_np, rx_np[:, 0]) * 1e3,
+            **{k: coherence_length_m(v, x_el) * 1e3 for k, v in screens.items()},
         },
         "residual_rms_ns": {
             "est_vs_measured": (est_np - screen_meas).std() * 1e9,
-            "est_vs_measured_detrended": detrend(est_np - screen_meas, rx_np[:, 0]).std() * 1e9,
+            "est_vs_measured_detrended": detrend(est_np - screen_meas, x_el).std() * 1e9,
             "est_vs_measured_highpass": highpass(est_np - screen_meas).std() * 1e9,
             "measured_highpass_rms": highpass(screen_meas).std() * 1e9,
             "highpass_correlation": float(np.corrcoef(highpass(est_np), highpass(screen_meas))[0, 1]),
             "raw_correlation": float(np.corrcoef(est_np, screen_meas)[0, 1]),
             "regression_slope": float(np.dot(est_np, screen_meas) / np.dot(screen_meas, screen_meas)),
-            "est_vs_ray_detrended": detrend(est_np - screen_ray_c, rx_np[:, 0]).std() * 1e9,
-            "measured_vs_ray_detrended": detrend(screen_meas - screen_ray_c, rx_np[:, 0]).std() * 1e9,
+            "est_vs_ray_detrended": detrend(est_np - screen_ray, x_el).std() * 1e9,
+            "measured_vs_ray_detrended": detrend(screen_meas - screen_ray, x_el).std() * 1e9,
         },
         "sharpness": sharp,
         "landscape_along_measured_screen": landscape,
-        "config": {
-            "layer": args.layer,
-            "layer_z_mm": [1e3 * v for v in layer_z],
-            "objective": args.objective,
-            "roi": args.roi,
-            "rms_ns": args.rms_ns,
-            "iterations": args.iterations,
-            "sigma_stages": args.sigma_stages,
-            "coherence_mm": args.coherence_mm,
-            "blank_us": args.blank_us,
-            "hp_mhz": args.hp_mhz,
-            "domain_mm": [WIDTH_M * 1e3, DEPTH_M * 1e3],
-        },
-        "cyst_contrast_db": {},
-        "wire_fwhm_mm": {},
-        "wire_peak_rel": {},
+        "config": {**vars(args), "layer_z_mm": [1e3 * v for v in layer_z], "domain_mm": [WIDTH_M * 1e3, DEPTH_M * 1e3]},
+        **image_metrics(env, x, z),
     }
-    for k, e in env.items():
-        metrics["cyst_contrast_db"][k] = cyst_contrast_db(e, x, z)
-        metrics["wire_fwhm_mm"][k] = {
-            f"{wx * 1e3:.0f},{wz * 1e3:.0f}": wire_fwhm_mm(e, x, z, (wx, wz))[0] for wx, wz in WIRES
-        }
-        metrics["wire_peak_rel"][k] = {
-            f"{wx * 1e3:.0f},{wz * 1e3:.0f}": wire_fwhm_mm(e, x, z, (wx, wz))[1]
-            / wire_fwhm_mm(env["control"], x, z, (wx, wz))[1]
-            for wx, wz in WIRES
-        }
     with open(os.path.join(args.out_dir, "metrics.json"), "w") as f:
         json.dump(metrics, f, indent=2, default=float)
-    np.savez(
-        os.path.join(args.out_dir, "screens.npz"),
-        x_m=rx_np[:, 0],
-        straight_ray=screen_ray_c,
-        measured=screen_meas,
-        estimated=est_np,
-        history=np.array(history),
-    )
+    np.savez(os.path.join(args.out_dir, "screens.npz"), x_m=x_el, history=history, **screens)
     for key in ("screen_rms_ns", "coherence_length_mm", "residual_rms_ns", "sharpness", "cyst_contrast_db"):
         print(f"  {key}: " + ", ".join(f"{k} {float(v):.3g}" for k, v in metrics[key].items()))
     print(
@@ -599,110 +678,12 @@ def main():  # noqa: C901
         )
     )
 
-    # figures
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    extent = [x[0] * 1e3, x[-1] * 1e3, z[-1] * 1e3, z[0] * 1e3]
-    titles = {
-        "control": "no aberrating layer",
-        "aberrated": "aberrated, uncorrected",
-        "estimated": "corrected with estimated screen",
-        "measured": "corrected with measured screen",
-    }
-    fig, axes = plt.subplots(1, 4, figsize=(20, 7.3), sharey=True)
-    for ax, k in zip(axes, ("control", "aberrated", "estimated", "measured"), strict=True):
-        ax.imshow(
-            20 * np.log10(env[k] / env[k].max() + 1e-12), extent=extent, cmap="gray", vmin=-55, vmax=0, aspect="equal"
-        )
-        ax.set_title(
-            f"{titles[k]}\ncyst contrast {metrics['cyst_contrast_db'][k]:.1f} dB, "
-            f"wire(0,20) FWHM {metrics['wire_fwhm_mm'][k]['0,20']:.2f} mm",
-            fontsize=10,
-        )
-        ax.set_xlabel("x (mm)")
-        ax.axhspan(layer_z[0] * 1e3, layer_z[1] * 1e3, color="tab:orange", alpha=0.12, lw=0)
-    axes[0].set_ylabel("z (mm)")
-    fig.suptitle(
+    title = (
         f"fullwave-ultra phantom, {args.layer} aberrating layer at {layer_z[0] * 1e3:.1f}-{layer_z[1] * 1e3:.1f} mm "
-        f"({args.rms_ns:.0f} ns RMS, {args.coherence_mm:.0f} mm coherence length); receive-only correction, {args.objective} objective, ROI {args.roi}",
-        fontsize=11,
+        f"({args.rms_ns:.0f} ns RMS, {args.coherence_mm:.0f} mm coherence length); receive-only correction by sharpness ascent"
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
-    fig.savefig(os.path.join(args.out_dir, "bmode.png"), dpi=110)
-
-    xe = rx_np[:, 0] * 1e3
-    fig, axes = plt.subplots(2, 2, figsize=(14, 8))
-    ax = axes[0, 0]
-    ax.plot(
-        xe,
-        screen_ray_c * 1e9,
-        color="0.5",
-        label=f"straight-ray integral (RMS {screen_ray_c.std() * 1e9:.0f} ns, coherence {metrics['coherence_length_mm']['straight_ray']:.1f} mm)",
-    )
-    ax.plot(
-        xe,
-        screen_meas * 1e9,
-        color="k",
-        label=f"measured on lone wire (RMS {screen_meas.std() * 1e9:.0f} ns, coherence {metrics['coherence_length_mm']['measured']:.1f} mm)",
-    )
-    ax.plot(xe, est_np * 1e9, label=f"estimated by sharpness ascent (RMS {est_np.std() * 1e9:.0f} ns)", color="tab:red")
-    ax.set_xlabel("element x (mm)")
-    ax.set_ylabel("receive delay (ns)")
-    ax.set_title("receive delay screen (mean removed)")
-    ax.legend(fontsize=9)
-    ax = axes[0, 1]
-    ax.plot(
-        xe,
-        highpass(screen_meas) * 1e9,
-        color="k",
-        label=f"measured, high-pass (RMS {metrics['residual_rms_ns']['measured_highpass_rms']:.0f} ns)",
-    )
-    ax.plot(
-        xe,
-        highpass(est_np) * 1e9,
-        color="tab:red",
-        label=f"estimated, high-pass (residual RMS {metrics['residual_rms_ns']['est_vs_measured_highpass']:.1f} ns, "
-        f"corr {metrics['residual_rms_ns']['highpass_correlation']:.2f})",
-    )
-    ax.axhline(0, color="k", lw=0.5)
-    ax.set_xlabel("element x (mm)")
-    ax.set_ylabel("delay (ns)")
-    ax.set_title(
-        f"components smoother than {HIGHPASS_SIGMA_ELEMENTS * PITCH_CELLS * DX * 1e3:.0f} mm removed from both\n"
-        f"(raw screens: correlation {metrics['residual_rms_ns']['raw_correlation']:.2f}, regression slope {metrics['residual_rms_ns']['regression_slope']:.2f})",
-        fontsize=10,
-    )
-    ax.legend(fontsize=9)
-    ax = axes[1, 0]
-    h = np.array(history)
-    ax.plot(h[:, 0], color="tab:blue")
-    ax.set_xlabel("iteration")
-    ax.set_ylabel("sharpness", color="tab:blue")
-    ax2 = ax.twinx()
-    ax2.plot(h[:, 1] * 1e9, color="tab:red")
-    ax2.set_ylabel("high-pass residual RMS vs measured (ns)", color="tab:red")
-    ax.set_title("convergence")
-    ax = axes[1, 1]
-    jj = np.arange(1, n_y + 1)
-    zl = z_of_row(jj) * 1e3
-    sel = zl < layer_z[1] * 1e3 + 2.5
-    im = ax.imshow(
-        delta_c[:, sel].T,
-        extent=[x_of_col(1) * 1e3, x_of_col(n_x) * 1e3, zl[sel][-1], zl[sel][0]],
-        cmap="RdBu_r",
-        vmin=-np.abs(delta_c).max(),
-        vmax=np.abs(delta_c).max(),
-        aspect="auto",
-    )
-    ax.set_xlabel("x (mm)")
-    ax.set_ylabel("z (mm)")
-    ax.set_title("aberrating layer: sound-speed deviation (m/s)")
-    fig.colorbar(im, ax=ax)
-    fig.tight_layout()
-    fig.savefig(os.path.join(args.out_dir, "screen.png"), dpi=110)
+    plot_bmode(env, x, z, metrics, layer_z, title, os.path.join(args.out_dir, "bmode.png"))
+    plot_screens(screens, x_el, history, delta_c, layer_z, metrics, os.path.join(args.out_dir, "screen.png"))
     print(f"wrote {args.out_dir}/bmode.png, screen.png, metrics.json, screens.npz")
 
 

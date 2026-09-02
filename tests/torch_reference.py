@@ -45,14 +45,13 @@ def beamform_reference(
     modulation_freq_hz: float,
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
-    differentiable_apodization: bool = False,
     rx_delays_s: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Delay-and-sum of ``channel_data`` (n_rx, n_samples, n_frames) -> (n_scan, n_frames).
 
-    ``sound_speed_m_s`` may be a 0-d tensor to differentiate with respect to it.
-    With ``differentiable_apodization=False`` (the CUDA VJP's convention) the Tukey weight is
-    treated as a constant with respect to the geometry; the aperture and bounds masks always are.
+    ``sound_speed_m_s`` may be a 0-d tensor to differentiate with respect to it. As in the CUDA
+    VJP, the Tukey weight, the aperture mask and the bounds masks are constants with respect to the
+    geometry; ``rx_delays_s`` (n_rx,) adds a per-element receive delay.
     """
     n_rx, n_samples, _ = channel_data.shape
     real_dtype = rx_coords_m.dtype
@@ -68,9 +67,7 @@ def beamform_reference(
         tau = tau + rx_delays_s[None, :]  # per-element receive delay (phase screen)
 
     if tukey_alpha > 0:
-        weight = tukey_apod_weight(torch.sqrt(horizontal_sq) / aperture_radius[:, None], tukey_alpha)
-        if not differentiable_apodization:
-            weight = weight.detach()
+        weight = tukey_apod_weight(torch.sqrt(horizontal_sq) / aperture_radius[:, None], tukey_alpha).detach()
         valid = in_aperture & (weight != 0)
     else:
         weight = torch.ones_like(tau)
@@ -111,12 +108,10 @@ def simulate_point_scatterers_iq(
     n_samples: int,
     n_frames: int = 1,
     pulse_sigma_s: float,
-    noise_std: float = 0.0,
-    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     """Baseband I/Q channel data from point scatterers insonified by a plane wave along +z.
 
-    d[e, n, f] = sum_s a_s exp(-((t_n - tau_se) / sigma)^2 / 2) exp(-j 2 pi f0 tau_se) + noise,
+    d[e, n, f] = sum_s a_s exp(-((t_n - tau_se) / sigma)^2 / 2) exp(-j 2 pi f0 tau_se),
     with tau_se = z_s / c + |rx_e - x_s| / c and t_n = n / fs (rx_start_s = 0). Beamforming with
     ``modulation_freq_hz=f0`` and ``tx_wave_arrivals_s = z / c`` undoes the carrier phase, so the
     delay-and-sum is coherent exactly at the true sound speed: a focusing problem whose image energy
@@ -129,11 +124,4 @@ def simulate_point_scatterers_iq(
     envelope = torch.exp(-0.5 * ((t[None, :, None] - tau[:, None, :]) / pulse_sigma_s) ** 2)  # (E, T, S)
     carrier = torch.exp(-1j * 2 * math.pi * f0_hz * tau)[:, None, :]
     data = (envelope * carrier * amplitudes.double()[None, None, :]).sum(-1)  # (E, T)
-    data = data[:, :, None].expand(-1, -1, n_frames).clone()
-    if noise_std > 0:
-        noise = torch.complex(
-            torch.randn(data.shape, generator=generator, device=device, dtype=torch.float64),
-            torch.randn(data.shape, generator=generator, device=device, dtype=torch.float64),
-        )
-        data = data + noise_std * noise
-    return data.to(torch.complex64)
+    return data[:, :, None].expand(-1, -1, n_frames).to(torch.complex64).contiguous()
