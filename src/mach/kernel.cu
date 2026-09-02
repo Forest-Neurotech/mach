@@ -83,6 +83,8 @@ struct SectionTimer {
 // Keep VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE constant, and adjust voxels_per_block and receive_elements_batch_size
 #define MAX_FRAME_THREADS_PER_BLOCK 32
 #define MIN_THREADS_PER_BLOCK 32
+// calculate_voxels_per_block() peaks at MIN_THREADS_PER_BLOCK voxels (one frame thread per block)
+#define MAX_VOXELS_PER_BLOCK ((MIN_THREADS_PER_BLOCK > DEFAULT_NUM_VOXELS_PER_BLOCK) ? MIN_THREADS_PER_BLOCK : DEFAULT_NUM_VOXELS_PER_BLOCK)
 #ifndef CACHE_CONFIG
 #define CACHE_CONFIG cudaFuncCachePreferEqual
 #endif
@@ -1018,7 +1020,9 @@ bool _try_beamform_inverted(
     float tukey_alpha,
     InterpolationType interp_type,
     bool use_inverted_kernel,
-    const float* d_rx_delays_s
+    const float* d_rx_delays_s,
+    cudaStream_t stream,
+    bool synchronize
 ) {
     if constexpr (!std::is_same_v<DataType, float2>) {
         return false;
@@ -1035,7 +1039,7 @@ bool _try_beamform_inverted(
 
         auto launch = [&](auto kernel) {
             checkCudaErrors(cudaFuncSetCacheConfig(kernel, CACHE_CONFIG));
-            kernel<<<grid, threads_per_block>>>(
+            kernel<<<grid, threads_per_block, 0, stream>>>(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
@@ -1048,8 +1052,7 @@ bool _try_beamform_inverted(
         else if (nearest)               launch(beamformKernelInvIQ<StorageType, false, InterpolationType::NearestNeighbor, FPT>);
         else                            launch(beamformKernelInvIQ<StorageType, false, InterpolationType::Linear,          FPT>);
 
-        // Wait for kernel to complete
-        checkCudaErrors(cudaDeviceSynchronize());
+        if (synchronize) checkCudaErrors(cudaDeviceSynchronize());
         return true;
     }
 }
@@ -1063,7 +1066,7 @@ bool _try_beamform_inverted(
  *
  * Forward: out[v,f] = sum_e W(v,e) * s(v,e)[f], with W = w_apod * exp(j*omega*tau),
  * s the interpolated sample at idx = (tau - rx_start_s) * fs and
- * tau = tx_arrival[v] + |rx[e] - scan[v]| / c.
+ * tau = tx_arrival[v] + rx_delay[e] + |rx[e] - scan[v]| / c.
  *
  * Given grad_out[v,f] = dL/dRe(out) + j*dL/dIm(out) (PyTorch's convention for a real
  * loss L), every enabled output is accumulated (+=) into a caller-zeroed buffer:
@@ -1083,16 +1086,19 @@ bool _try_beamform_inverted(
  *                 The aperture mask, the sample-bounds masks and the apodization weight are
  *                 treated as constants with respect to the geometry.
  *
- * Loop order: element outermost, the thread's frame chunks innermost. Per element the
- * delay, taps and complex weight are computed once; per chunk the FPT frames of grad_out
- * (and of the two taps when NeedGradTau) are loaded and either scattered with atomics
- * (grad_channel_data) or dotted into per-element registers. Phase 1 (shared delay/apod
- * table) is identical to beamformKernelInvIQ. No thread returns early, so that the
- * block-wide phases see every thread.
+ * Phase 1 (shared delay/apod table) is identical to beamformKernelInvIQ. Phase 2 runs the element
+ * loop outermost and the thread's frame chunks innermost, so the delay, taps and complex weight
+ * are computed once per element; the upstream gradient is loaded once per thread when it owns a
+ * single chunk. Per chunk the FPT frames are either scattered with atomics (grad_channel_data) or
+ * dotted into per-element registers. Phase 3 applies the chain rule from the block's (voxel,
+ * element) table: per-voxel outputs are reduced over the elements in shared memory and per-element
+ * outputs over the block's voxels in registers, so each block issues 4 global atomics per voxel and
+ * 4 per element instead of 8 per table entry. No thread returns early, so the block-wide phases see
+ * every thread.
  *
  * @tparam StorageType float2 (FP32 storage) or __half2 (FP16 storage) for channel_data
  * @tparam NeedGradData accumulate grad_channel_data
- * @tparam NeedGradTau  accumulate the geometry / sound-speed / rx_start_s gradients
+ * @tparam NeedGradTau  accumulate the geometry / sound-speed / rx_start_s / rx_delays gradients
  */
 template<typename StorageType, bool UseApodization, InterpolationType interpType, int FPT,
          bool NeedGradData, bool NeedGradTau>
@@ -1141,16 +1147,20 @@ __global__ void beamformKernelInvIQVJP(
     const uint64_t voxel_idx = static_cast<uint64_t>(voxel_batch_idx) * num_voxels_per_block + voxel_tid;
     const bool voxel_valid = voxel_idx < n_output_voxels;
     const float modulation_freq_rad = 2.0f * PI * modulation_freq_hz;
+    DEBUG_ASSERT(num_voxels_per_block <= MAX_VOXELS_PER_BLOCK);
 
     static __shared__ float2 voxel_tau_and_apod_weights[VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE];
     __shared__ float g_phase_table[NeedGradTau ? VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE : 1];
     __shared__ float g_idx_table[NeedGradTau ? VOXELS_RECEIVE_ELEMENTS_BATCH_SIZE : 1];
+    __shared__ float3 voxel_xyz_table[NeedGradTau ? MAX_VOXELS_PER_BLOCK : 1];
+    __shared__ float voxel_partials[NeedGradTau ? MAX_VOXELS_PER_BLOCK : 1][4];  // per voxel: dL/dtx, dL/dscan.xyz
     __shared__ double block_grad_sound_speed;
     __shared__ double block_grad_rx_start_s;
 
     // Phase 1: delay/apod table (identical to the forward), plus zeroed reduction tables.
+    float3 voxel_xyz = make_float3(0.0f, 0.0f, 0.0f);
     if (voxel_valid) {
-        const float3 voxel_xyz = output_voxels_xyz[voxel_idx];
+        voxel_xyz = output_voxels_xyz[voxel_idx];
         const float voxel_tx_delay_s = tx_arrival_delays[voxel_idx];
         const float aperture_radius = voxel_xyz.z / (2.0f * f_number);
         const float aperture_radius_squared = aperture_radius * aperture_radius;
@@ -1164,6 +1174,11 @@ __global__ void beamformKernelInvIQVJP(
             g_phase_table[i] = 0.0f;
             g_idx_table[i] = 0.0f;
         }
+        if (frame_tid == 0) {
+            voxel_xyz_table[voxel_tid] = voxel_xyz;
+            voxel_partials[voxel_tid][0] = voxel_partials[voxel_tid][1] = 0.0f;
+            voxel_partials[voxel_tid][2] = voxel_partials[voxel_tid][3] = 0.0f;
+        }
         if (tid == 0) {
             block_grad_sound_speed = 0.0;
             block_grad_rx_start_s = 0.0;
@@ -1175,6 +1190,18 @@ __global__ void beamformKernelInvIQVJP(
     const uint32_t n_chunks = (n_frames + FPT - 1) / FPT;
     if (voxel_valid) {
         const float2* const g_row = grad_out + voxel_idx * static_cast<uint64_t>(n_frames);
+        // grad_out rows are n_frames long (not padded): scalar loads, masked past n_frames.
+        auto load_grad = [&](const uint32_t frame0, float2 (&g)[FPT]) {
+            #pragma unroll
+            for (int k = 0; k < FPT; k++) {
+                g[k] = (frame0 + k < n_frames) ? g_row[frame0 + k] : make_float2(0.0f, 0.0f);
+            }
+        };
+        // With at most one chunk per thread (n_frames <= FPT * blockDim.x, i.e. up to 128 frames) the
+        // upstream gradient is loaded once per thread instead of once per element.
+        const bool one_chunk_per_thread = (n_chunks <= num_frame_threads);
+        float2 g[FPT];
+        if (one_chunk_per_thread) load_grad(frame_tid * FPT, g);
         for (uint32_t e = 0; e < receive_elements_in_batch; e++) {
             const float2 tau_and_weight = voxel_tau_and_apod_weights[voxel_tid * receive_elements_in_batch + e];
             const float physical_tau_s = tau_and_weight.x;
@@ -1204,12 +1231,7 @@ __global__ void beamformKernelInvIQVJP(
             float g_phase = 0.0f, g_idx = 0.0f;
             for (uint32_t chunk = frame_tid; chunk < n_chunks; chunk += num_frame_threads) {
                 const uint32_t frame0 = chunk * FPT;
-                // grad_out rows are n_frames long (not padded): scalar loads, masked past n_frames.
-                float2 g[FPT];
-                #pragma unroll
-                for (int k = 0; k < FPT; k++) {
-                    g[k] = (frame0 + k < n_frames) ? g_row[frame0 + k] : make_float2(0.0f, 0.0f);
-                }
+                if (!one_chunk_per_thread) load_grad(frame0, g);
                 if constexpr (NeedGradData) {
                     float2* const grad_row0 = grad_channel_data + row0_base + frame0;
                     float2* const grad_row1 = grad_channel_data + row1_base + frame0;
@@ -1266,46 +1288,81 @@ __global__ void beamformKernelInvIQVJP(
 
     if constexpr (NeedGradTau) {
         __syncthreads();
-        // Phase 3: chain rule from dL/dtau(v,e) to the geometry, cooperatively over the block's table.
         const float inv_c2 = inv_sound_speed_m_s * inv_sound_speed_m_s;
-        double local_grad_c = 0.0, local_grad_t0 = 0.0;
-        const unsigned int n_entries = num_voxels_per_block * receive_elements_in_batch;
-        for (unsigned int i = tid; i < n_entries; i += n_threads) {
-            const unsigned int v_local = i / receive_elements_in_batch;
-            const unsigned int e = i - v_local * receive_elements_in_batch;
-            const uint64_t v = static_cast<uint64_t>(voxel_batch_idx) * num_voxels_per_block + v_local;
-            if (v >= n_output_voxels) continue;
-            const float2 tau_and_weight = voxel_tau_and_apod_weights[i];
-            if ((tau_and_weight.x < 0.0f) || (tau_and_weight.y == 0.0f)) continue;  // outside the aperture
-            const float gp = g_phase_table[i];
-            const float gi = g_idx_table[i];
-            const float g_tau = fmaf(modulation_freq_rad, gp, sampling_freq_hz * gi);
-            if ((g_tau == 0.0f) && (gi == 0.0f)) continue;
-            const uint32_t receive_element_idx = receive_element_block_start_idx + e;
-            const float3 rx = rx_coords_m[receive_element_idx];
-            const float3 vx = output_voxels_xyz[v];
+        // dL/dtau of one table entry and the vector dL/dtau * (rx - voxel) / (r c) it acts along;
+        // false when the entry is masked (outside the aperture or with no gradient).
+        auto entry = [&](const unsigned int i, const float3 rx, const float3 vx,
+                         float& g_tau, float& g_idx, float3& dir, float& r) -> bool {
+            const float2 tw = voxel_tau_and_apod_weights[i];
+            if ((tw.x < 0.0f) || (tw.y == 0.0f)) return false;
+            g_idx = g_idx_table[i];
+            g_tau = fmaf(modulation_freq_rad, g_phase_table[i], sampling_freq_hz * g_idx);
+            if ((g_tau == 0.0f) && (g_idx == 0.0f)) return false;
             const float dx = rx.x - vx.x, dy = rx.y - vx.y, dz = rx.z - vx.z;
-            const float r = sqrtf(dx * dx + dy * dy + dz * dz);
-            // dL/dtau * dtau/dr / r, with dtau/dr = 1/c: the coordinate gradients are +-k * (dx, dy, dz)
+            r = sqrtf(dx * dx + dy * dy + dz * dz);
             const float k = (r > 0.0f) ? g_tau * inv_sound_speed_m_s / r : 0.0f;
-            if (grad_tx_arrivals != nullptr) atomicAdd(&grad_tx_arrivals[v], g_tau);
-            if (grad_rx_delays_s != nullptr) atomicAdd(&grad_rx_delays_s[receive_element_idx], g_tau);
-            if (grad_scan_coords != nullptr) {
-                atomicAdd(&grad_scan_coords[v].x, -k * dx);
-                atomicAdd(&grad_scan_coords[v].y, -k * dy);
-                atomicAdd(&grad_scan_coords[v].z, -k * dz);
+            dir = make_float3(k * dx, k * dy, k * dz);
+            return true;
+        };
+
+        // Phase 3a: per-voxel gradients, and the two scalars (each entry once). Each thread sums the
+        // e-stripe of its own voxel's row; the frame lanes meet in shared memory.
+        double local_grad_c = 0.0, local_grad_t0 = 0.0;
+        if (voxel_valid) {
+            float acc_tx = 0.0f, acc_x = 0.0f, acc_y = 0.0f, acc_z = 0.0f;
+            for (unsigned int e = frame_tid; e < receive_elements_in_batch; e += num_frame_threads) {
+                float g_tau, g_idx, r;
+                float3 dir;
+                if (!entry(voxel_tid * receive_elements_in_batch + e, rx_coords_m[receive_element_block_start_idx + e],
+                           voxel_xyz, g_tau, g_idx, dir, r)) continue;
+                acc_tx += g_tau;
+                acc_x -= dir.x;
+                acc_y -= dir.y;
+                acc_z -= dir.z;
+                local_grad_c += static_cast<double>(g_tau) * static_cast<double>(-r * inv_c2);
+                local_grad_t0 += static_cast<double>(g_idx) * static_cast<double>(-sampling_freq_hz);
             }
-            if (grad_rx_coords != nullptr) {
-                atomicAdd(&grad_rx_coords[receive_element_idx].x, k * dx);
-                atomicAdd(&grad_rx_coords[receive_element_idx].y, k * dy);
-                atomicAdd(&grad_rx_coords[receive_element_idx].z, k * dz);
-            }
-            local_grad_c += static_cast<double>(g_tau) * static_cast<double>(-r * inv_c2);
-            local_grad_t0 += static_cast<double>(gi) * static_cast<double>(-sampling_freq_hz);
+            atomicAdd(&voxel_partials[voxel_tid][0], acc_tx);
+            atomicAdd(&voxel_partials[voxel_tid][1], acc_x);
+            atomicAdd(&voxel_partials[voxel_tid][2], acc_y);
+            atomicAdd(&voxel_partials[voxel_tid][3], acc_z);
         }
         if (grad_sound_speed != nullptr) atomicAdd(&block_grad_sound_speed, local_grad_c);
         if (grad_rx_start_s != nullptr) atomicAdd(&block_grad_rx_start_s, local_grad_t0);
+
+        // Phase 3b: per-element gradients. Threads take elements in turn and sum over the block's voxels.
+        if ((grad_rx_coords != nullptr) || (grad_rx_delays_s != nullptr)) {
+            for (unsigned int e = tid; e < receive_elements_in_batch; e += n_threads) {
+                const uint32_t receive_element_idx = receive_element_block_start_idx + e;
+                const float3 rx = rx_coords_m[receive_element_idx];
+                float acc_x = 0.0f, acc_y = 0.0f, acc_z = 0.0f, acc_delay = 0.0f;
+                for (unsigned int v_local = 0; v_local < num_voxels_per_block; v_local++) {
+                    if (static_cast<uint64_t>(voxel_batch_idx) * num_voxels_per_block + v_local >= n_output_voxels) break;
+                    float g_tau, g_idx, r;
+                    float3 dir;
+                    if (!entry(v_local * receive_elements_in_batch + e, rx, voxel_xyz_table[v_local], g_tau, g_idx, dir, r)) continue;
+                    acc_x += dir.x;
+                    acc_y += dir.y;
+                    acc_z += dir.z;
+                    acc_delay += g_tau;
+                }
+                if (grad_rx_coords != nullptr) {
+                    atomicAdd(&grad_rx_coords[receive_element_idx].x, acc_x);
+                    atomicAdd(&grad_rx_coords[receive_element_idx].y, acc_y);
+                    atomicAdd(&grad_rx_coords[receive_element_idx].z, acc_z);
+                }
+                if (grad_rx_delays_s != nullptr) atomicAdd(&grad_rx_delays_s[receive_element_idx], acc_delay);
+            }
+        }
         __syncthreads();
+        if (voxel_valid && (frame_tid == 0)) {
+            if (grad_tx_arrivals != nullptr) atomicAdd(&grad_tx_arrivals[voxel_idx], voxel_partials[voxel_tid][0]);
+            if (grad_scan_coords != nullptr) {
+                atomicAdd(&grad_scan_coords[voxel_idx].x, voxel_partials[voxel_tid][1]);
+                atomicAdd(&grad_scan_coords[voxel_idx].y, voxel_partials[voxel_tid][2]);
+                atomicAdd(&grad_scan_coords[voxel_idx].z, voxel_partials[voxel_tid][3]);
+            }
+        }
         if (tid == 0) {
             if (grad_sound_speed != nullptr) atomicAdd(grad_sound_speed, block_grad_sound_speed);
             if (grad_rx_start_s != nullptr) atomicAdd(grad_rx_start_s, block_grad_rx_start_s);
@@ -1344,7 +1401,9 @@ void _beamform_inverted_vjp(
     float sound_speed_m_s,
     float modulation_freq_hz,
     float tukey_alpha,
-    InterpolationType interp_type
+    InterpolationType interp_type,
+    cudaStream_t stream,
+    bool synchronize
 ) {
     constexpr int FPT = 4;
     const bool need_data = d_grad_channel_data != nullptr;
@@ -1363,7 +1422,7 @@ void _beamform_inverted_vjp(
     const bool nearest = interp_type == InterpolationType::NearestNeighbor;
     auto launch = [&](auto kernel) {
         checkCudaErrors(cudaFuncSetCacheConfig(kernel, CACHE_CONFIG));
-        kernel<<<grid, threads_per_block>>>(
+        kernel<<<grid, threads_per_block, 0, stream>>>(
             d_channel_data, d_grad_out, d_grad_channel_data, d_grad_tx_arrivals, d_grad_scan_coords,
             d_grad_rx_coords, d_grad_sound_speed, d_grad_rx_start_s,
             n_frames, frame_stride, n_receive_elements, n_samples,
@@ -1387,7 +1446,7 @@ void _beamform_inverted_vjp(
     else if (apod_flag)        dispatch(std::true_type{}, Linear{});
     else if (nearest)          dispatch(std::false_type{}, Nearest{});
     else                       dispatch(std::false_type{}, Linear{});
-    checkCudaErrors(cudaDeviceSynchronize());
+    if (synchronize) checkCudaErrors(cudaDeviceSynchronize());
 }
 
 /**
@@ -1442,7 +1501,9 @@ void _beamform_impl(
     float tukey_alpha,
     InterpolationType interp_type,
     bool use_inverted_kernel,
-    const float* d_rx_delays_s
+    const float* d_rx_delays_s,
+    cudaStream_t stream,
+    bool synchronize
 ) {
 #ifdef CUDA_PROFILE
     TIME_FUNCTION();
@@ -1473,7 +1534,7 @@ void _beamform_impl(
             d_channel_data, d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
             n_receive_elements, n_samples, n_output_voxels, n_frames, frame_stride,
             f_number, rx_start_s, sampling_freq_hz, inv_sound_speed_m_s,
-            modulation_freq_hz, tukey_alpha, interp_type, use_inverted_kernel, d_rx_delays_s)) {
+            modulation_freq_hz, tukey_alpha, interp_type, use_inverted_kernel, d_rx_delays_s, stream, synchronize)) {
         return;
     }
 
@@ -1544,7 +1605,7 @@ void _beamform_impl(
     if (apod_flag) {
         if (interp_type == InterpolationType::NearestNeighbor) {
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, true, InterpolationType::NearestNeighbor, StorageType>, CACHE_CONFIG));
-            beamformKernel<DataType, true, InterpolationType::NearestNeighbor, StorageType><<<grid, threads_per_block>>>(
+            beamformKernel<DataType, true, InterpolationType::NearestNeighbor, StorageType><<<grid, threads_per_block, 0, stream>>>(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
@@ -1552,7 +1613,7 @@ void _beamform_impl(
             );
         } else if (interp_type == InterpolationType::Linear) {
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, true, InterpolationType::Linear, StorageType>, CACHE_CONFIG));
-            beamformKernel<DataType, true, InterpolationType::Linear, StorageType><<<grid, threads_per_block>>>(
+            beamformKernel<DataType, true, InterpolationType::Linear, StorageType><<<grid, threads_per_block, 0, stream>>>(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
@@ -1560,7 +1621,7 @@ void _beamform_impl(
             );
         } else { // Quadratic interpolation
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, true, InterpolationType::Quadratic, StorageType>, CACHE_CONFIG));
-            beamformKernel<DataType, true, InterpolationType::Quadratic, StorageType><<<grid, threads_per_block>>>(
+            beamformKernel<DataType, true, InterpolationType::Quadratic, StorageType><<<grid, threads_per_block, 0, stream>>>(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
@@ -1570,7 +1631,7 @@ void _beamform_impl(
     } else {
         if (interp_type == InterpolationType::NearestNeighbor) {
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false, InterpolationType::NearestNeighbor, StorageType>, CACHE_CONFIG));
-            beamformKernel<DataType, false, InterpolationType::NearestNeighbor, StorageType><<<grid, threads_per_block>>>(
+            beamformKernel<DataType, false, InterpolationType::NearestNeighbor, StorageType><<<grid, threads_per_block, 0, stream>>>(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
@@ -1578,7 +1639,7 @@ void _beamform_impl(
             );
         } else if (interp_type == InterpolationType::Linear) {
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false, InterpolationType::Linear, StorageType>, CACHE_CONFIG));
-            beamformKernel<DataType, false, InterpolationType::Linear, StorageType><<<grid, threads_per_block>>>(
+            beamformKernel<DataType, false, InterpolationType::Linear, StorageType><<<grid, threads_per_block, 0, stream>>>(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
@@ -1586,7 +1647,7 @@ void _beamform_impl(
             );
         } else { // Quadratic interpolation
             checkCudaErrors(cudaFuncSetCacheConfig(beamformKernel<DataType, false, InterpolationType::Quadratic, StorageType>, CACHE_CONFIG));
-            beamformKernel<DataType, false, InterpolationType::Quadratic, StorageType><<<grid, threads_per_block>>>(
+            beamformKernel<DataType, false, InterpolationType::Quadratic, StorageType><<<grid, threads_per_block, 0, stream>>>(
                 d_channel_data, n_frames, frame_stride, n_receive_elements, n_samples,
                 d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 sampling_freq_hz, inv_sound_speed_m_s, modulation_freq_hz,
@@ -1595,7 +1656,7 @@ void _beamform_impl(
         }
     }
     // Wait for kernel to complete
-    checkCudaErrors(cudaDeviceSynchronize());
+    if (synchronize) checkCudaErrors(cudaDeviceSynchronize());
 
 #ifdef CUDA_PROFILE
     } // End of kernel_execution section
@@ -1793,7 +1854,9 @@ void beamform(
     float tukey_alpha,
     InterpolationType interp_type,
     bool use_inverted_kernel,
-    std::optional<nb::ndarray<const float, nb::ndim<1>, nb::c_contig>> rx_delays_s
+    std::optional<nb::ndarray<const float, nb::ndim<1>, nb::c_contig>> rx_delays_s,
+    uintptr_t stream,
+    bool synchronize
 ) {
 #ifdef CUDA_PROFILE
     TIME_FUNCTION();
@@ -1814,7 +1877,10 @@ void beamform(
         n_receive_elements, n_samples, n_output_voxels, n_frames);
     int cpu_count = check_devices(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, out);
     cpu_count += check_optional_array(rx_delays_s, "rx_delays_s", {static_cast<int64_t>(n_receive_elements)});
-
+    if ((stream != 0 || !synchronize) && cpu_count != 0) {
+        throw std::runtime_error("stream / synchronize=False need all arrays on the GPU (found " + std::to_string(cpu_count) + " CPU array(s))");
+    }
+    const cudaStream_t cuda_stream = reinterpret_cast<cudaStream_t>(stream);
 
     // If all arrays are already on CUDA, use the direct kernel call
     bool all_cuda = (cpu_count == 0);
@@ -1830,14 +1896,14 @@ void beamform(
             _beamform_impl<float2>(d_channel_data, d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 n_receive_elements, n_samples, n_output_voxels, n_frames, frame_stride,
                 f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type,
-                use_inverted_kernel, rx_delays_s ? rx_delays_s->data() : nullptr);
+                use_inverted_kernel, rx_delays_s ? rx_delays_s->data() : nullptr, cuda_stream, synchronize);
         } else if constexpr (std::is_same_v<DataType, float>) {
             const float* d_channel_data = channel_data.data();
             float* d_out = out.data();
             _beamform_impl<float>(d_channel_data, d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 n_receive_elements, n_samples, n_output_voxels, n_frames, frame_stride,
                 f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type,
-                use_inverted_kernel, rx_delays_s ? rx_delays_s->data() : nullptr);
+                use_inverted_kernel, rx_delays_s ? rx_delays_s->data() : nullptr, cuda_stream, synchronize);
         }
         return;
     }
@@ -1934,7 +2000,9 @@ void beamform(
             tukey_alpha,
             interp_type,
             use_inverted_kernel,
-            d_rx_delays_s
+            d_rx_delays_s,
+            nullptr,
+            true
         );
     } else if constexpr (std::is_same_v<DataType, float>) {
         _beamform_impl<float>(
@@ -1956,7 +2024,9 @@ void beamform(
             tukey_alpha,
             interp_type,
             use_inverted_kernel,
-            d_rx_delays_s
+            d_rx_delays_s,
+            nullptr,
+            true
         );
     }
 #ifdef CUDA_PROFILE
@@ -2012,7 +2082,9 @@ void beamform_fp16(
     float tukey_alpha,
     InterpolationType interp_type,
     bool use_inverted_kernel,
-    std::optional<nb::ndarray<const float, nb::ndim<1>, nb::c_contig>> rx_delays_s
+    std::optional<nb::ndarray<const float, nb::ndim<1>, nb::c_contig>> rx_delays_s,
+    uintptr_t stream,
+    bool synchronize
 ) {
     const size_t n_receive_elements = rx_coords_m.shape(0);
     const size_t n_samples = channel_data.shape(1);
@@ -2056,7 +2128,7 @@ void beamform_fp16(
         n_receive_elements, n_samples, n_output_voxels, n_frames, frame_stride,
         f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s,
         modulation_freq_hz, tukey_alpha, interp_type, use_inverted_kernel,
-        rx_delays_s ? rx_delays_s->data() : nullptr);
+        rx_delays_s ? rx_delays_s->data() : nullptr, reinterpret_cast<cudaStream_t>(stream), synchronize);
 }
 
 /**
@@ -2084,7 +2156,9 @@ void beamform_vjp(
     std::optional<nb::ndarray<float, nb::shape<-1, 3>, nb::c_contig>> grad_rx_coords_m,
     std::optional<nb::ndarray<double, nb::ndim<1>, nb::c_contig>> grad_sound_speed_m_s,
     std::optional<nb::ndarray<double, nb::ndim<1>, nb::c_contig>> grad_rx_start_s,
-    std::optional<nb::ndarray<float, nb::ndim<1>, nb::c_contig>> grad_rx_delays_s
+    std::optional<nb::ndarray<float, nb::ndim<1>, nb::c_contig>> grad_rx_delays_s,
+    uintptr_t stream,
+    bool synchronize
 ) {
     const size_t n_receive_elements = rx_coords_m.shape(0);
     const size_t n_samples = channel_data.shape(1);
@@ -2125,7 +2199,8 @@ void beamform_vjp(
         tx_wave_arrivals_s.data(),
         rx_delays_s ? rx_delays_s->data() : nullptr,
         n_receive_elements, n_samples, n_output_voxels, n_frames, frame_stride,
-        f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type);
+        f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type,
+        reinterpret_cast<cudaStream_t>(stream), synchronize);
 }
 
 NB_MODULE(_cuda_impl, m) {
@@ -2160,7 +2235,9 @@ NB_MODULE(_cuda_impl, m) {
         "tukey_alpha"_a = 0.5f,
         "interp_type"_a = InterpolationType::Linear,
         "use_inverted_kernel"_a = true,
-        "rx_delays_s"_a.noconvert() = nb::none());
+        "rx_delays_s"_a.noconvert() = nb::none(),
+        "stream"_a = 0,
+        "synchronize"_a = true);
 
     m.def("beamform", &beamform<float>,
         "channel_data"_a.noconvert(),
@@ -2176,7 +2253,9 @@ NB_MODULE(_cuda_impl, m) {
         "tukey_alpha"_a = 0.5f,
         "interp_type"_a = InterpolationType::Linear,
         "use_inverted_kernel"_a = true,
-        "rx_delays_s"_a.noconvert() = nb::none());
+        "rx_delays_s"_a.noconvert() = nb::none(),
+        "stream"_a = 0,
+        "synchronize"_a = true);
 
     m.def("beamform_fp16", &beamform_fp16,
         "I/Q beamforming with FP16 (half2) channel-data storage (GPU arrays only).\n\n"
@@ -2198,7 +2277,9 @@ NB_MODULE(_cuda_impl, m) {
         "tukey_alpha"_a = 0.5f,
         "interp_type"_a = InterpolationType::Linear,
         "use_inverted_kernel"_a = true,
-        "rx_delays_s"_a.noconvert() = nb::none());
+        "rx_delays_s"_a.noconvert() = nb::none(),
+        "stream"_a = 0,
+        "synchronize"_a = true);
 
     m.def("beamform_vjp", &beamform_vjp,
         "Vector-Jacobian product (backward pass) of beamform() for complex64 channel data "
@@ -2210,7 +2291,8 @@ NB_MODULE(_cuda_impl, m) {
         "grad_rx_coords_m, grad_sound_speed_m_s (float64, shape (1,)), grad_rx_start_s "
         "(float64, shape (1,)) and grad_rx_delays_s (per-element receive delays, shape (n_rx,)). "
         "rx_delays_s (optional, shape (n_rx,)) is the per-element receive delay added to tau, as in "
-        "beamform(). The aperture, sample bounds and apodization weight are "
+        "beamform(). stream is a CUDA stream handle (0: legacy default stream) and synchronize=False "
+        "returns as soon as the kernel is queued. The aperture, sample bounds and apodization weight are "
         "treated as constants with respect to the geometry.",
         "channel_data"_a.noconvert(),
         "rx_coords_m"_a.noconvert(),
@@ -2231,5 +2313,7 @@ NB_MODULE(_cuda_impl, m) {
         "grad_rx_coords_m"_a.noconvert() = nb::none(),
         "grad_sound_speed_m_s"_a.noconvert() = nb::none(),
         "grad_rx_start_s"_a.noconvert() = nb::none(),
-        "grad_rx_delays_s"_a.noconvert() = nb::none());
+        "grad_rx_delays_s"_a.noconvert() = nb::none(),
+        "stream"_a = 0,
+        "synchronize"_a = true);
 }

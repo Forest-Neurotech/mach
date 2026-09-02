@@ -37,6 +37,8 @@ def beamform(
     interp_type: InterpolationType = InterpolationType.Linear,
     use_inverted_kernel: bool = True,
     rx_delays_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C", writable=False)] | None = None,
+    stream: int = 0,
+    synchronize: bool = True,
 ) -> None: ...
 @overload
 def beamform(
@@ -54,6 +56,8 @@ def beamform(
     interp_type: InterpolationType = InterpolationType.Linear,
     use_inverted_kernel: bool = True,
     rx_delays_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C", writable=False)] | None = None,
+    stream: int = 0,
+    synchronize: bool = True,
 ) -> None: ...
 def beamform_fp16(
     channel_data: Annotated[ArrayLike, dict(dtype="uint16", shape=(None, None, None), order="C", writable=False)],
@@ -70,6 +74,8 @@ def beamform_fp16(
     interp_type: InterpolationType = InterpolationType.Linear,
     use_inverted_kernel: bool = True,
     rx_delays_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C", writable=False)] | None = None,
+    stream: int = 0,
+    synchronize: bool = True,
 ) -> None:
     """
     I/Q beamforming with FP16 (half2) channel-data storage (GPU arrays only).
@@ -97,6 +103,8 @@ def beamform_vjp(
     grad_sound_speed_m_s: Annotated[ArrayLike, dict(dtype="float64", shape=(None), order="C")] | None = None,
     grad_rx_start_s: Annotated[ArrayLike, dict(dtype="float64", shape=(None), order="C")] | None = None,
     grad_rx_delays_s: Annotated[ArrayLike, dict(dtype="float32", shape=(None), order="C")] | None = None,
+    stream: int = 0,
+    synchronize: bool = True,
 ) -> None:
     """
     Vector-Jacobian product (backward pass) of beamform() for complex64 channel data (GPU arrays only, inverted-kernel layout: nearest/linear interpolation, channel_data.shape[2] a multiple of 4 frames >= grad_out.shape[1]).

@@ -35,8 +35,15 @@ def beamform(  # noqa: C901
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
     rx_delays_s: Real[Array, " n_rx"] | None = None,
+    stream: int = 0,
+    synchronize: bool = True,
 ) -> Array:
     """CUDA ultrasound beamforming with automatic GPU/CPU dispatch.
+
+    ``rx_delays_s`` (n_rx,) adds a per-element receive delay to every arrival time (the phase-screen
+    aberration model). ``stream`` is a CUDA stream handle to launch on (e.g.
+    ``torch.cuda.current_stream().cuda_stream``; 0 is the legacy default stream) and ``synchronize=False``
+    returns as soon as the kernels are queued instead of waiting for them; both need all arrays on the GPU.
 
     This function implements delay-and-sum beamforming with the following features:
     - Dynamic aperture growth based on F-number
@@ -296,6 +303,8 @@ def beamform(  # noqa: C901
         tukey_alpha=tukey_alpha,
         interp_type=interp_type,
         rx_delays_s=rx_delays_s,
+        stream=stream,
+        synchronize=synchronize,
     )
 
     return cast(Array, out)

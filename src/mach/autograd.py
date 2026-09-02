@@ -67,7 +67,9 @@ def check_layout(channel_data: torch.Tensor, n_frames: int, interp_type: Interpo
     if not channel_data.is_cuda:
         raise ValueError("channel_data must be a CUDA tensor (mach.autograd is GPU-only)")
     if channel_data.ndim != 3:
-        raise ValueError(f"channel_data must have shape (n_rx, n_samples, frame_stride), got {tuple(channel_data.shape)}")
+        raise ValueError(
+            f"channel_data must have shape (n_rx, n_samples, frame_stride), got {tuple(channel_data.shape)}"
+        )
     if interp_type == InterpolationType.Quadratic:
         raise ValueError("quadratic interpolation has no backward kernel; use nearest or linear")
     frame_stride = int(channel_data.shape[2])
@@ -111,8 +113,20 @@ _GRAD_INPUTS = (
 
 class _BeamformIQ(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s, sound_speed_m_s, rx_start_s, params):  # type: ignore[override]
+    def forward(
+        ctx,
+        channel_data,
+        rx_coords_m,
+        scan_coords_m,
+        tx_wave_arrivals_s,
+        rx_delays_s,
+        sound_speed_m_s,
+        rx_start_s,
+        params,
+    ):  # type: ignore[override]
         out = torch.zeros((scan_coords_m.shape[0], params.n_frames), dtype=torch.complex64, device=channel_data.device)
+        # Launch on torch's current stream without a device-wide synchronize: torch orders the surrounding
+        # work on that stream, so the host keeps queueing while the kernel runs.
         kernel.beamform(
             channel_data,
             rx_coords_m,
@@ -127,6 +141,8 @@ class _BeamformIQ(torch.autograd.Function):
             tukey_alpha=params.tukey_alpha,
             interp_type=params.interp_type,
             rx_delays_s=rx_delays_s,
+            stream=torch.cuda.current_stream(channel_data.device).cuda_stream,
+            synchronize=False,
         )
         ctx.save_for_backward(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s)
         ctx.params = params
@@ -176,6 +192,8 @@ class _BeamformIQ(torch.autograd.Function):
                 modulation_freq_hz=p.modulation_freq_hz,
                 tukey_alpha=p.tukey_alpha,
                 interp_type=p.interp_type,
+                stream=torch.cuda.current_stream(device).cuda_stream,
+                synchronize=False,
             )
         for name in ("sound_speed_m_s", "rx_start_s"):
             if grads[name] is not None:
@@ -227,7 +245,9 @@ def beamform(
     if rx_delays_s is not None:
         rx_delays_s = _as_float32(rx_delays_s, "rx_delays_s")
         if rx_delays_s.shape != (rx_coords_m.shape[0],):
-            raise ValueError(f"rx_delays_s must have shape (n_rx,) = ({rx_coords_m.shape[0]},), got {tuple(rx_delays_s.shape)}")
+            raise ValueError(
+                f"rx_delays_s must have shape (n_rx,) = ({rx_coords_m.shape[0]},), got {tuple(rx_delays_s.shape)}"
+            )
     c = float(sound_speed_m_s)
     if not math.isfinite(c) or c <= 0:
         raise ValueError("sound_speed_m_s must be a positive finite number")
@@ -241,4 +261,6 @@ def beamform(
         tukey_alpha=float(tukey_alpha),
         interp_type=interp_type,
     )
-    return _BeamformIQ.apply(channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s, sound_speed_m_s, rx_start_s, params)
+    return _BeamformIQ.apply(
+        channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s, sound_speed_m_s, rx_start_s, params
+    )

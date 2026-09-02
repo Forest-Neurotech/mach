@@ -8,6 +8,7 @@ if not torch.cuda.is_available():
 
 from torch_reference import beamform_reference, simulate_point_scatterers_iq  # noqa: E402  (tests/ is on sys.path)
 
+from mach._cuda_impl import beamform as nb_beamform  # noqa: E402
 from mach._cuda_impl import beamform_vjp  # noqa: E402
 from mach.autograd import beamform, pad_frames, sharpness  # noqa: E402
 from mach.kernel import InterpolationType  # noqa: E402
@@ -295,6 +296,32 @@ def test_autofocus_recovers_sound_speed():
     # The sharpness maximum of this finite-aperture, finite-grid problem sits ~1.5 m/s below the
     # true value (a property of the metric, not of the gradient); the descent reaches it.
     assert abs(float(c) - C_M_S) < 4.0
+
+
+def test_custom_stream_and_no_sync_match_default():
+    """Forward and backward launched on a non-default stream without a device synchronize match the default path."""
+    chan, rx, scan, tx = make_problem()
+    y = torch.complex(torch.randn(N_SCAN, 8, device=DEV), torch.randn(N_SCAN, 8, device=DEV))
+
+    def run():
+        chan_ = chan.clone().requires_grad_(True)
+        tx_ = tx.clone().requires_grad_(True)
+        out = beamform(chan_, rx, scan, tx_, **kwargs())
+        torch.real(vdot(y, out)).backward()
+        return out.detach().clone(), chan_.grad.clone(), tx_.grad.clone()
+
+    ref = run()
+    stream = torch.cuda.Stream()
+    with torch.cuda.stream(stream):
+        got = run()
+    stream.synchronize()
+    for a, b in zip(got, ref, strict=True):
+        assert torch.equal(a, b) or rel_norm_err(a, b) < 1e-6
+    # the nanobind function with an explicit stream and no synchronize
+    out = torch.zeros(N_SCAN, 8, dtype=torch.complex64, device=DEV)
+    nb_beamform(chan, rx, scan, tx, out, stream=stream.cuda_stream, synchronize=False, **kwargs())
+    stream.synchronize()
+    assert rel_norm_err(out, ref[0]) < 1e-6
 
 
 def test_layout_errors():

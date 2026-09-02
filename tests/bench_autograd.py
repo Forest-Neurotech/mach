@@ -16,6 +16,7 @@ from mach._cuda_impl import beamform_vjp
 
 CONFIGS = [
     # label, n_rx, n_samples, n_frames, n_voxels
+    ("128 ch, 1024 samples, 4 frames, 120k voxels (imaging / autofocus shape)", 128, 1024, 4, 120_000),
     ("256 ch, 512 samples, 64 frames, 40k voxels", 256, 512, 64, 40_000),
     ("1024 ch, 256 samples, 128 frames, 128^3 voxels", 1024, 256, 128, 128**3),
 ]
@@ -98,9 +99,9 @@ def run(label, n_rx, n_samples, n_frames, n_voxels):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--small", action="store_true", help="only the first configuration")
+    parser.add_argument("--small", action="store_true", help="skip the 128^3-voxel configuration")
     args = parser.parse_args()
     props = torch.cuda.get_device_properties(0)
     print(f"{props.name}, {props.total_memory / 2**30:.0f} GiB")
-    for cfg in CONFIGS[: 1 if args.small else None]:
+    for cfg in CONFIGS[: -1 if args.small else None]:
         run(*cfg)

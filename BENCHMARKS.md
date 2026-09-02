@@ -309,11 +309,21 @@ c.grad
 `beamformKernelInvIQVJP` keeps the forward's phase one (shared delay/apodization table) and
 inverts phase two the other way round: the receive-element loop is outermost and each thread's
 four-frame chunks are innermost, so the delay, taps and complex weight are computed once per
-element. Per chunk it loads the four frames of `grad_out` and either scatters `conj(W) * c_n * g`
-into the two tap rows of `grad_channel_data` with atomics, or dots `g` against the interpolated
-sample and the tap difference to get `dL/dtau` per (voxel, element). A third phase applies the chain
-rule from `dL/dtau` to the transmit arrivals, coordinates, sound speed (`-r/c^2`) and start time
-(`-fs`), with per-block reductions of the two scalars in float64.
+element, and the upstream gradient is loaded once per thread when it owns a single chunk (up to
+128 frames). Per chunk it either scatters `conj(W) * c_n * g` into the two tap rows of
+`grad_channel_data` with atomics, or dots `g` against the interpolated sample and the tap
+difference to get `dL/dtau` per (voxel, element). A third phase applies the chain rule from the
+block's (voxel, element) table: per-voxel outputs (transmit arrivals, scan coordinates) are reduced
+over the elements in shared memory and per-element outputs (element coordinates, receive delays)
+over the block's voxels in registers, so each block issues 4 global atomics per voxel and 4 per
+element instead of 8 per table entry; the two scalars (sound speed, start time) are reduced per
+block in float64.
+
+Both `beamform()` and `beamform_vjp()` accept `stream` (a CUDA stream handle such as
+`torch.cuda.current_stream().cuda_stream`; 0 is the legacy default stream) and
+`synchronize` (default True: wait for the kernel; False: return as soon as it is queued, GPU arrays
+only). `mach.autograd` launches on torch's current stream with `synchronize=False`, so the host
+keeps queueing the optimizer step and the next forward while the GPU works.
 
 ### Validation
 
@@ -345,9 +355,15 @@ elements fall inside each voxel's aperture; the ratios are the useful part.
 
 | configuration | forward | adjoint (channel data) | delay gradients | both |
 |---|---|---|---|---|
-| 256 ch, 512 samples, 64 frames, 40k voxels | 7.7 ms | 74 ms (9.7×) | 27 ms (3.5×) | 88 ms (11.5×) |
-| 1024 ch, 256 samples, 128 frames, 128³ voxels | 5.0 s | 33.9 s (6.8×) | 10.6 s (2.1×) | 38.9 s (7.8×) |
+| 128 ch, 1024 samples, 4 frames, 120k voxels (imaging / autofocus shape) | 3.1 ms | 12.1 ms (3.9×) | 8.0 ms (2.6×) | 12.8 ms (4.2×) |
+| 256 ch, 512 samples, 64 frames, 40k voxels | 7.6 ms | 74 ms (9.7×) | 26 ms (3.5×) | 84 ms (11×) |
+| 1024 ch, 256 samples, 128 frames, 128³ voxels | 5.0 s | 34.3 s (6.9×) | 10.3 s (2.1×) | 37.8 s (7.6×) |
 
 The channel-data adjoint is bound by its scattered atomics (four float atomics per element, voxel
-and frame for linear interpolation); the delay gradients cost about twice the forward because they
-read both taps and `grad_out`. Only the gradients that autograd asks for are computed.
+and frame for linear interpolation). The delay gradients cost two to three times the forward
+because they read both taps and `grad_out`; at 64 frames and above that path is compute bound, and
+at the 4-frame imaging shape the block-level reduction of the chain-rule atomics halved it (17.6 ms
+to 8.0 ms delay gradients, 25.0 ms to 12.8 ms both, same GPU). Only the gradients that autograd
+asks for are computed. In an optimisation loop the stream launch without a device synchronize
+matters as much: the autofocus iteration of `tests/test_autograd.py`'s focusing problem (80k
+voxels, 64 elements, forward + backward + Adam step) takes 4.0 ms instead of 8.0 ms.
