@@ -247,4 +247,4 @@ build-verbosity = 1
 # Use a builder image that already includes CUDA
 # gcc version also needs to be compatible with the CUDA version
 # https://stackoverflow.com/a/46380601/8094659
-manylinux-x86_64-image = "sameli/manylinux2014_x86_64_cuda_12.3"
+manylinux-x86_64-image = "sameli/manylinux_2_34_x86_64_cuda_12.8"

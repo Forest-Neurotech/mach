@@ -57,7 +57,7 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --generate-line-info")
 # cubin matches the device, and it requires a driver at least as new as the
 # build toolkit.
 # https://developer.nvidia.com/cuda/gpus
-set(CMAKE_CUDA_ARCHITECTURES 75 80 86 89 90)
+set(CMAKE_CUDA_ARCHITECTURES 75 80 86 89 90 120)
 
 # nanobind requires GCC 8+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -66,8 +66,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     endif()
 endif()
 
-# Check minimum CUDA compiler version
-set(NVCC_MIN_VERSION 11.0)
+# Check minimum CUDA compiler version (sm_120 cubins need 12.8)
+set(NVCC_MIN_VERSION 12.8)
 if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS ${NVCC_MIN_VERSION})
     message(FATAL_ERROR "NVCC (CUDA compiler) version must be at least ${NVCC_MIN_VERSION}!")
 endif()

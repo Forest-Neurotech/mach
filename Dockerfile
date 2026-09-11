@@ -3,7 +3,7 @@
 # Development environment for mach-beamform
 # Provides CUDA compilation without requiring local CUDA installation
 
-ARG CUDA_VERSION=12.6.3
+ARG CUDA_VERSION=12.8.1
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04
 
 # Avoid interactive prompts during package installation
