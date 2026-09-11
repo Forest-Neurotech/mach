@@ -55,8 +55,8 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --generate-line-info")
 # Build native SASS for every GPU we deploy on. Shipping a native cubin per
 # arch avoids relying on PTX JIT at load time -- a JIT only happens when no
 # cubin matches the device, and it requires a driver at least as new as the
-# build toolkit. 75 Turing, 80/86 Ampere (A100, A6000, 30-series), 89 Ada,
-# 90 Hopper.
+# build toolkit.
+# https://developer.nvidia.com/cuda/gpus
 set(CMAKE_CUDA_ARCHITECTURES 75 80 86 89 90)
 
 # nanobind requires GCC 8+
