@@ -70,7 +70,7 @@ uv run --group compare tests/plot_benchmark.py --output assets/benchmark-doppler
 uv run --group compare tests/plot_benchmark.py --points-per-second --output assets/benchmark-doppler_disk_pps.svg
 ```
 
-The benchmark job in our CI pipeline ([`test_gpu.yml`](https://github.com/Forest-Neurotech/mach/blob/main/.github/workflows/test_gpu.yml)) automatically runs these benchmarks across different commits, providing continuous performance monitoring.
+The benchmark job in our CI pipeline ([`test_gpu.yml`](https://github.com/Forest-Neurotech/mach/blob/main/.github/workflows/test_gpu.yml)) automatically runs these benchmarks (on a T4 GPU) across different commits and releases, providing continuous performance monitoring.
 
 ## CUDA Optimizations
 

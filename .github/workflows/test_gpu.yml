@@ -17,6 +17,9 @@ on:
       - "!.gitignore"
       - "!.github/workflows/*.yml"
       - ".github/workflows/test_gpu.yml"
+  release:
+    # Run the T4 benchmark on publish and attach JSON/plots to the GitHub Release.
+    types: [published]
   workflow_dispatch: # manual button click
 
 defaults:
@@ -94,3 +97,24 @@ jobs:
           include-hidden-files: true
           path: .benchmarks
           retention-days: 7
+
+  upload_benchmark:
+    name: Upload benchmark results on releases
+    needs: [benchmark]
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'release' && github.event.action == 'published'
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download benchmark results
+      uses: actions/download-artifact@v6
+      with:
+        name: benchmark-results
+        path: benchmark-results
+
+    - name: Upload benchmarks to the GitHub Release that triggered this workflow
+      uses: softprops/action-gh-release@v2
+      with:
+        fail_on_unmatched_files: true
+        files: benchmark-results/**/*
