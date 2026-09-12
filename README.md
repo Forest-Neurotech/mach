@@ -35,7 +35,7 @@ pip install mach-beamform[all]
 
 Wheel prerequisites:
 * [Linux](https://github.com/pypa/manylinux) with glibc >= 2.34 (Ubuntu 22.04+, RHEL 9, Debian 12)
-* CUDA-enabled GPU with driver >= 12.3, [compute-capability >= 7.5](https://developer.nvidia.com/cuda-gpus)
+* CUDA-enabled GPU with driver >= 12.8, [compute-capability >= 7.5](https://developer.nvidia.com/cuda-gpus)
 
 ### Build from source
 
@@ -55,7 +55,7 @@ Compile and test without installing the CUDA *toolkit* using our Docker developm
 
 **Prerequisites:**
 * Docker Engine with [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-* CUDA-capable GPU with driver >= 12.3
+* CUDA-capable GPU with driver >= 12.8
 
 **Quick start:**
 
