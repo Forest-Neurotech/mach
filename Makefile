@@ -1,5 +1,9 @@
 SHELL := /bin/bash
 
+# make benchmark BENCHMARK_BASELINE=baseline.json fails if any median is over 25% slower
+BENCHMARK_BASELINE ?=
+BENCHMARK_COMPARE_ARGS := $(if $(BENCHMARK_BASELINE),--benchmark-compare=$(BENCHMARK_BASELINE) --benchmark-compare-fail=median:25%)
+
 .PHONY: help
 help: ## Displays help information about available make commands
 	@if command -v uv &> /dev/null; then \
@@ -78,7 +82,7 @@ test-fail: ## Runs Python tests that failed, and drop into debugger on failure
 .PHONY: benchmark
 benchmark: ## Runs benchmarking comparisons
 	@echo "🚀 Running benchmarking comparisons"
-	uv run --group test --group array --group compare pytest tests -v -s --benchmark-only --benchmark-histogram --benchmark-autosave --benchmark-save-data
+	uv run --group test --group array --group compare pytest tests -v -s --benchmark-only --benchmark-histogram --benchmark-autosave --benchmark-save-data $(BENCHMARK_COMPARE_ARGS)
 
 .PHONY: profile
 profile: ## Runs Python test with simple profiling. Recommend using Nsight Compute or Nsight Systems for more detailed profiling.

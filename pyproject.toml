@@ -217,6 +217,8 @@ filterwarnings = [
     # vbeam warnings
     "ignore:point_position will be overwritten by the scan.:UserWarning",
     "ignore:Both point_position and scan are set. Scan will be used.:UserWarning",
+    # pytest-benchmark warns when the baseline's machine_info differs; show it without failing
+    "default:Benchmark machine_info is different:UserWarning",
 ]
 markers = [
     # see conftest.py for default-addition of cuda marker
