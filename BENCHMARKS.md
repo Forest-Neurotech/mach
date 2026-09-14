@@ -341,9 +341,7 @@ rotation, evaluated in float64 with PyTorch autograd for the reference gradients
 | sharpness autofocus on simulated point scatterers, started 60 m/s off | recovers the true sound speed |
 
 `examples/autofocus_sound_speed.py` runs the autofocus on a 128-element simulation
-(`--plot` writes the sharpness curve and the images before and after). The `rx_delays_s`
-gradient is the basis of a receive phase-aberration study on full-wave simulations that lives
-in a separate repository (it needs a full-wave solver).
+(`--plot` writes the sharpness curve and the images before and after).
 
 ### Cost on an RTX A6000
 
