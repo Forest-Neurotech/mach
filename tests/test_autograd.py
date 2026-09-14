@@ -72,6 +72,41 @@ def vdot(a, b):
     return torch.vdot(a.flatten().to(torch.complex128), b.flatten().to(torch.complex128))
 
 
+def random_upstream(seed: int, n_frames: int = 8):
+    """A seeded random upstream gradient (n_scan, n_frames)."""
+    g = torch.Generator(device=DEV).manual_seed(seed)
+    return torch.complex(
+        torch.randn((N_SCAN, n_frames), generator=g, device=DEV),
+        torch.randn((N_SCAN, n_frames), generator=g, device=DEV),
+    )
+
+
+def random_delays(seed: int, span_s: float):
+    """Seeded per-element receive delays, uniform in +-span_s/2."""
+    g = torch.Generator(device=DEV).manual_seed(seed)
+    return (torch.rand(N_RX, generator=g, device=DEV) - 0.5) * span_s
+
+
+def assert_breakpoint_margin(rx, scan, tx, delays, interp_type, f_number=1.0, margin=1e-4):
+    """No in-aperture sample index within ``margin`` samples of an interpolation breakpoint.
+
+    The derivative of the interpolant with respect to the delay is discontinuous at the
+    breakpoints (integer sample indices for linear, half-integers for nearest). The kernel
+    computes the index in float32 and the reference in float64, so a pair closer to a breakpoint
+    than the float32 rounding (~1e-5 samples here) can land on different segments and the two
+    delay gradients then differ by that pair's whole contribution. The seeded test data are
+    checked to stay clear of that; if this fails after a change to the problem, pick another seed.
+    """
+    rx, scan, tx = rx.double(), scan.double(), tx.double()
+    dist = torch.linalg.norm(rx[None] - scan[:, None], dim=2)  # (V, E)
+    idx = (dist / C_M_S + tx[:, None] + delays.double()[None]) * FS_HZ
+    horizontal = torch.linalg.norm(rx[None, :, :2] - scan[:, None, :2], dim=2)
+    in_aperture = horizontal <= (scan[:, 2] / (2.0 * f_number))[:, None]
+    offset = 0.0 if interp_type == LINEAR else 0.5
+    to_breakpoint = ((idx - offset) - torch.round(idx - offset)).abs()[in_aperture]
+    assert float(to_breakpoint.min()) > margin, f"sample index {float(to_breakpoint.min()):.1e} from a breakpoint"
+
+
 @pytest.mark.parametrize("interp_type", [NEAREST, LINEAR], ids=["nearest", "linear"])
 @pytest.mark.parametrize("tukey_alpha", [0.0, 0.5])
 @pytest.mark.parametrize("modulation_freq_hz", [F0_HZ, 0.0])
@@ -116,7 +151,7 @@ def test_adjoint_dot_product(interp_type, tukey_alpha, modulation_freq_hz):
 def test_grad_channel_data_matches_reference(interp_type, modulation_freq_hz):
     chan, rx, scan, tx = make_problem()
     kw = kwargs(interp_type=interp_type, modulation_freq_hz=modulation_freq_hz)
-    y = torch.complex(torch.randn(N_SCAN, 8, device=DEV), torch.randn(N_SCAN, 8, device=DEV))
+    y = random_upstream(seed=1)
 
     chan_k = chan.clone().requires_grad_(True)
     torch.real(vdot(y, beamform(chan_k, rx, scan, tx, **kw))).backward()
@@ -134,9 +169,9 @@ def test_grad_channel_data_matches_reference(interp_type, modulation_freq_hz):
 def test_grad_geometry_matches_reference(interp_type, modulation_freq_hz):
     """Gradients w.r.t. tx arrivals, scan/rx coordinates, sound speed and rx_start_s."""
     chan, rx, scan, tx = make_problem()
-    y = torch.complex(torch.randn(N_SCAN, 8, device=DEV), torch.randn(N_SCAN, 8, device=DEV))
-
-    delays = ((torch.rand(N_RX, device=DEV) - 0.5) * 20e-9).double()  # +-10 ns per-element screen
+    y = random_upstream(seed=2)
+    delays = random_delays(seed=108, span_s=20e-9).double()  # +-10 ns per-element screen
+    assert_breakpoint_margin(rx, scan, tx, delays, interp_type)
 
     def run(fn, dtype):
         # clone: .to() with the same dtype returns the same object, which would alias the fixtures
@@ -172,6 +207,7 @@ def test_grad_geometry_matches_reference(interp_type, modulation_freq_hz):
         del ref["t0"], kernel["t0"]
     errs = {k: rel_norm_err(kernel[k], ref[k]) for k in ref}
     print("geometry grads rel norm err:", {k: f"{v:.2e}" for k, v in errs.items()})
+    # ~1e-4 typical (1e-7 without the phase term); see assert_breakpoint_margin for the data constraint.
     for name, err in errs.items():
         assert err < 1e-3, f"{name}: {err:.2e}"
     # both are sums of the same dL/dtau(v, e) table, over elements and over voxels respectively
@@ -180,7 +216,7 @@ def test_grad_geometry_matches_reference(interp_type, modulation_freq_hz):
 
 def test_forward_with_rx_delays_matches_reference():
     chan, rx, scan, tx = make_problem()
-    delays = (torch.rand(N_RX, device=DEV) - 0.5) * 40e-9
+    delays = random_delays(seed=4, span_s=40e-9)
     out = beamform(chan, rx, scan, tx, rx_delays_s=delays, **kwargs())
     ref = reference(chan, rx, scan, tx, rx_delays_s=delays.double(), **kwargs())
     assert float((out - ref).abs().max() / ref.abs().max()) < 2e-4
@@ -292,16 +328,16 @@ def test_autofocus_recovers_sound_speed():
         (-focusing_sharpness(chan, rx, scan, c)).backward()
         optimizer.step()
         scheduler.step()
-    print(f"autofocus: recovered c = {float(c):.2f} m/s (true {C_M_S})")
+    print(f"autofocus: recovered c = {c.item():.2f} m/s (true {C_M_S})")
     # The sharpness maximum of this finite-aperture, finite-grid problem sits ~1.5 m/s below the
     # true value (a property of the metric, not of the gradient); the descent reaches it.
-    assert abs(float(c) - C_M_S) < 4.0
+    assert abs(c.item() - C_M_S) < 4.0
 
 
 def test_custom_stream_and_no_sync_match_default():
     """Forward and backward launched on a non-default stream without a device synchronize match the default path."""
     chan, rx, scan, tx = make_problem()
-    y = torch.complex(torch.randn(N_SCAN, 8, device=DEV), torch.randn(N_SCAN, 8, device=DEV))
+    y = random_upstream(seed=5)
 
     def run():
         chan_ = chan.clone().requires_grad_(True)

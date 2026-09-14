@@ -132,7 +132,7 @@ class _BeamformIQ(torch.autograd.Function):
             rx_coords_m,
             scan_coords_m,
             tx_wave_arrivals_s,
-            out,
+            out,  # ty: ignore[invalid-argument-type]  (the wrapper accepts torch tensors; the Array protocol is narrower)
             rx_start_s=params.rx_start_s,
             sampling_freq_hz=params.sampling_freq_hz,
             f_number=params.f_number,
@@ -149,7 +149,8 @@ class _BeamformIQ(torch.autograd.Function):
         return out
 
     @staticmethod
-    def backward(ctx, grad_out):  # type: ignore[override]
+    def backward(ctx, *grad_outputs):
+        (grad_out,) = grad_outputs
         channel_data, rx_coords_m, scan_coords_m, tx_wave_arrivals_s, rx_delays_s = ctx.saved_tensors
         p = ctx.params
         need = dict(zip(_GRAD_INPUTS, ctx.needs_input_grad, strict=False))
@@ -209,6 +210,11 @@ def _as_float32(x: torch.Tensor, name: str) -> torch.Tensor:
     return x.to(torch.float32).contiguous()
 
 
+def _scalar(x) -> float:
+    """float() of a number or a 0-d tensor; detaches first so a tracked tensor raises no warning."""
+    return float(x.detach()) if isinstance(x, torch.Tensor) else float(x)
+
+
 def beamform(
     channel_data: torch.Tensor,
     rx_coords_m: torch.Tensor,
@@ -248,13 +254,13 @@ def beamform(
             raise ValueError(
                 f"rx_delays_s must have shape (n_rx,) = ({rx_coords_m.shape[0]},), got {tuple(rx_delays_s.shape)}"
             )
-    c = float(sound_speed_m_s)
+    c = _scalar(sound_speed_m_s)
     if not math.isfinite(c) or c <= 0:
         raise ValueError("sound_speed_m_s must be a positive finite number")
     params = _Params(
         n_frames=n_frames,
         f_number=float(f_number),
-        rx_start_s=float(rx_start_s),
+        rx_start_s=_scalar(rx_start_s),
         sampling_freq_hz=float(sampling_freq_hz),
         sound_speed_m_s=c,
         modulation_freq_hz=float(modulation_freq_hz),

@@ -48,6 +48,9 @@ vis = [
     "colorcet>=3.1.0",
     "numpy>=1.25.0",
 ]
+torch = [
+    "torch>=2.4",  # mach.autograd (differentiable beamforming)
+]
 examples = [
     "pymust>=0.1.8",
     "requests>=2.25.0",
@@ -97,6 +100,7 @@ array = [
     "numpy>=2.0.2",
     "cupy-cuda12x>=14.0.0",
     "jax[cuda12]>=0.7.1",
+    "torch>=2.4,<2.11",  # torch>=2.11 PyPI wheels are CUDA 13 builds; keep the CUDA 12 stack
 ]
 # Compare with other beamforming libraries
 compare = [

@@ -11,6 +11,7 @@ Auto-generated API reference documentation.
    :recursive:
 
    kernel
+   autograd
    wavefront
    geometry
    experimental

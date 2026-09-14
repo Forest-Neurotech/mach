@@ -90,14 +90,14 @@ def main():
         optimizer.zero_grad()
         loss = -sharpness(image(channel_data, rx, scan, plane_distance_m, c))
         loss.backward()
-        trajectory.append((float(c), -float(loss), float(c.grad)))
+        trajectory.append((c.item(), -loss.item(), float(c.grad)))
         if iteration % 10 == 0:
             print(
-                f"iteration {iteration:3d}: c = {float(c):8.2f} m/s   sharpness = {-float(loss):.4e}   dS/dc = {float(c.grad):+.2e}"
+                f"iteration {iteration:3d}: c = {c.item():8.2f} m/s   sharpness = {-loss.item():.4e}   dS/dc = {float(c.grad):+.2e}"
             )
         optimizer.step()
         scheduler.step()
-    print(f"recovered c = {float(c):.2f} m/s (true {C_TRUE_M_S:.1f}, started at {args.start:.1f})")
+    print(f"recovered c = {c.item():.2f} m/s (true {C_TRUE_M_S:.1f}, started at {args.start:.1f})")
 
     if args.plot:
         import matplotlib
@@ -112,7 +112,7 @@ def main():
                 image(channel_data, rx, scan, plane_distance_m, args.start).abs()[:, 0].reshape(len(x), len(z)).T.cpu()
             )
             after = (
-                image(channel_data, rx, scan, plane_distance_m, float(c)).abs()[:, 0].reshape(len(x), len(z)).T.cpu()
+                image(channel_data, rx, scan, plane_distance_m, c.item()).abs()[:, 0].reshape(len(x), len(z)).T.cpu()
             )
         fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
         axes[0].plot(speeds, curve, label="sharpness")
@@ -123,7 +123,7 @@ def main():
         extent = [x[0].item() * 1e3, x[-1].item() * 1e3, z[-1].item() * 1e3, z[0].item() * 1e3]
         for ax, img, title in (
             (axes[1], before, f"c = {args.start:.0f} m/s"),
-            (axes[2], after, f"c = {float(c):.1f} m/s"),
+            (axes[2], after, f"c = {c.item():.1f} m/s"),
         ):
             ax.imshow(to_db(img), extent=extent, cmap="gray", vmin=-50, vmax=0, aspect="equal")
             ax.set_title(title)
