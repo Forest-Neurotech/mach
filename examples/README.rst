@@ -19,10 +19,6 @@ Standalone scripts (not run by the gallery; need a CUDA build of PyTorch)
 - **autofocus_sound_speed.py**: sound-speed autofocus by gradient ascent on the image
   sharpness through ``mach.autograd`` (simulated point scatterers).
 
-- **fullwave_phase_aberration.py**: receive phase-screen estimation on fullwave-ultra
-  simulations of a speckle phantom imaged through a near-field sound-speed layer
-  (needs the ``fullwave2_ultra`` package and its solver binaries).
-
 Dependencies
 ------------
 
