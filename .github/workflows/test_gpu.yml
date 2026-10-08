@@ -80,7 +80,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Run CUDA benchmark
-        run: make benchmark
+        # Releases skip the comparison so a regression can't block upload_benchmark
+        run: |
+          wget -nv -O benchmark-baseline.json https://github.com/Forest-Neurotech/mach/releases/download/v0.2.0/0001_d90076f72177d9d0562a012bb2d37353033c623b_20260912_001631.json
+          make benchmark BENCHMARK_BASELINE=${{ github.event_name != 'release' && 'benchmark-baseline.json' || '' }}
 
       - name: Plot benchmark (runtime)
         run:
