@@ -6,7 +6,7 @@ from array_api_compat import is_writeable_array
 from jaxtyping import Num, Real
 
 from mach._array_api import Array, array_namespace
-from mach._check import ensure_contiguous, is_contiguous
+from mach._check import is_contiguous, try_contiguous
 
 # Import from the nanobind module
 from ._cuda_impl import (
@@ -70,12 +70,9 @@ def beamform(  # noqa: C901
         tx_wave_arrivals_s:
             Transmit wave arrival times with shape (n_scan,) in seconds.
             This represents the time when the transmitted acoustic wave arrives at each
-            scan grid point. For different transmit types:
-            - Plane wave: arrivals computed from wave direction and grid positions
-            - Focused/diverging wave: arrivals computed from focal point and grid positions
-
-            Use `mach.wavefront.plane() / sound_speed_m_s` or
-            `mach.wavefront.spherical() / sound_speed_m_s` to compute these values.
+            scan grid point.
+            Compute an arrival distance with a `mach.wavefront` helper function,
+            then divide it by `sound_speed_m_s` to obtain these arrival times.
         out:
             Optional output array with shape (n_scan, nframes).
             Must match input type: complex64 for I/Q, float32 for RF.
@@ -251,10 +248,10 @@ def beamform(  # noqa: C901
             modulation_freq_hz = 0.0
 
     # Check for contiguous arrays in libraries that support it
-    channel_data = ensure_contiguous(channel_data)
-    rx_coords_m = ensure_contiguous(rx_coords_m)
-    scan_coords_m = ensure_contiguous(scan_coords_m)
-    tx_wave_arrivals_s = ensure_contiguous(tx_wave_arrivals_s)
+    channel_data = try_contiguous(channel_data)
+    rx_coords_m = try_contiguous(rx_coords_m)
+    scan_coords_m = try_contiguous(scan_coords_m)
+    tx_wave_arrivals_s = try_contiguous(tx_wave_arrivals_s)
 
     if out is None:
         out = xp_data.zeros((n_scan, nframes), dtype=output_dtype)
