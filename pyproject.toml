@@ -69,6 +69,7 @@ dev = [
     "ty>=0.0.49",
 ]
 test = [
+    "array-api-extra>=0.10.0",
     "array-api-strict>=2.0.0",
     "beartype>=0.21.0",
     "h5py>=3.12.1",

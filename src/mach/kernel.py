@@ -6,7 +6,7 @@ from array_api_compat import is_writeable_array
 from jaxtyping import Num, Real
 
 from mach._array_api import Array, array_namespace
-from mach._check import ensure_contiguous, is_contiguous
+from mach._check import is_contiguous, try_contiguous
 
 # Import from the nanobind module
 from ._cuda_impl import (
@@ -251,10 +251,10 @@ def beamform(  # noqa: C901
             modulation_freq_hz = 0.0
 
     # Check for contiguous arrays in libraries that support it
-    channel_data = ensure_contiguous(channel_data)
-    rx_coords_m = ensure_contiguous(rx_coords_m)
-    scan_coords_m = ensure_contiguous(scan_coords_m)
-    tx_wave_arrivals_s = ensure_contiguous(tx_wave_arrivals_s)
+    channel_data = try_contiguous(channel_data)
+    rx_coords_m = try_contiguous(rx_coords_m)
+    scan_coords_m = try_contiguous(scan_coords_m)
+    tx_wave_arrivals_s = try_contiguous(tx_wave_arrivals_s)
 
     if out is None:
         out = xp_data.zeros((n_scan, nframes), dtype=output_dtype)
