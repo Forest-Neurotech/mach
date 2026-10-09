@@ -70,12 +70,9 @@ def beamform(  # noqa: C901
         tx_wave_arrivals_s:
             Transmit wave arrival times with shape (n_scan,) in seconds.
             This represents the time when the transmitted acoustic wave arrives at each
-            scan grid point. For different transmit types:
-            - Plane wave: arrivals computed from wave direction and grid positions
-            - Focused/diverging wave: arrivals computed from focal point and grid positions
-
-            Use `mach.wavefront.plane() / sound_speed_m_s` or
-            `mach.wavefront.spherical() / sound_speed_m_s` to compute these values.
+            scan grid point.
+            Compute an arrival distance with a `mach.wavefront` helper function,
+            then divide it by `sound_speed_m_s` to obtain these arrival times.
         out:
             Optional output array with shape (n_scan, nframes).
             Must match input type: complex64 for I/Q, float32 for RF.
