@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "mach-beamform"
-version = "0.2.1"  # Update via bump-my-version, not manually
+version = "0.2.1"  # Update via `uv version --bump`
 description = "Ultrafast GPU-accelerated beamforming kernel for ultrasound imaging"
 authors = [
     { name = "Charles Guan" },
@@ -62,7 +62,6 @@ all = [
 
 [dependency-groups]
 dev = [
-    "bump-my-version>=1.0.0",
     "deptry>=0.22.0",
     "pre-commit>=2.20.0",
     "ruff>=0.9.2",

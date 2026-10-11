@@ -13,7 +13,6 @@ on:
       - "!**.md"
       - "!**.rst"
       - "!docs/**"
-      - "!.bumpversion.toml"
       - "!.gitignore"
       - "!.github/workflows/*.yml"
       - ".github/workflows/test_gpu.yml"
