@@ -8,10 +8,9 @@ It supports input arrays from NumPy, CuPy, and JAX through the DLPack protocol.
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("mach")
+    __version__ = version("mach-beamform")
 except PackageNotFoundError:
-    # Update via bump-my-version, not manually
-    __version__ = "0.2.1"
+    __version__ = "0+unknown"
 
 # Import main modules to make them available as mach.module_name
 from . import geometry, kernel, wavefront

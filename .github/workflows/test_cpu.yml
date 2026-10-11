@@ -10,7 +10,6 @@ on:
       - "!**.md"
       - "!**.rst"
       - "!docs/**"
-      - "!.bumpversion.toml"
       - "!.gitignore"
       - "!**.cu"
       - "!**.h"
