@@ -427,14 +427,16 @@ def earliest_arrival(
 
     xp = array_namespace(element_positions_m, element_delays_s, points_m)
 
-    n_elements = int(element_positions_m.shape[0])
+    n_elements = element_positions_m.shape[0]
     if n_elements == 0:
         raise ValueError("element_positions_m must contain at least one element")
     element_delay_distances_m = element_delays_s * sound_speed_m_s
 
     points_shape = points_m.shape[:-1]
     points_flat = xp.reshape(points_m, (-1, 3))
-    n_points = int(points_flat.shape[0])
+    n_points = points_flat.shape[0]
+    if n_points == 0:
+        raise ValueError("points_m must contain at least one point")
 
     point_results = []
     for point_start in range(0, n_points, point_chunk_size):
@@ -462,5 +464,5 @@ def earliest_arrival(
         assert earliest_distances_m is not None
         point_results.append(earliest_distances_m)
 
-    result = xp.concat(point_results, axis=0) if point_results else xp.asarray([], dtype=points_flat.dtype)
+    result = xp.concat(point_results, axis=0)
     return xp.reshape(result, points_shape)
