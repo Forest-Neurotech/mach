@@ -3,18 +3,18 @@
 import numpy as np
 import pytest
 
-from mach._check import ensure_contiguous, is_contiguous
+from mach._check import is_contiguous, try_contiguous
 
 
 def test_contiguous_numpy_array():
     """Test that contiguous numpy arrays are correctly identified."""
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
     assert is_contiguous(arr)
-    assert ensure_contiguous(arr) is arr
+    assert try_contiguous(arr) is arr
 
     assert not is_contiguous(arr.T)
     with pytest.warns(UserWarning, match="array is not contiguous"):
-        assert ensure_contiguous(arr.T) is not arr.T
+        assert try_contiguous(arr.T) is not arr.T
 
 
 def test_fortran_order_array():
@@ -23,4 +23,4 @@ def test_fortran_order_array():
     # Fortran order is not C-contiguous
     assert not is_contiguous(arr)
     with pytest.warns(UserWarning, match="array is not contiguous"):
-        assert ensure_contiguous(arr) is not arr
+        assert try_contiguous(arr) is not arr

@@ -22,13 +22,25 @@ def is_contiguous(array: Array) -> bool:
     return True
 
 
-def ensure_contiguous(array: Array, *, warn: bool = True) -> Array:
-    """Ensure an array is contiguous.
+def try_contiguous(array: Array, *, warn: bool = True) -> Array:
+    """Return a contiguous array when contiguity can be determined.
+
+    Arrays without NumPy or CuPy flags are assumed to be contiguous and
+    returned unchanged.
+
+    Args:
+        array:
+            Input array.
+        warn:
+            Whether to warn before copying a non-contiguous array.
 
     Returns:
-        True if the array is contiguous.
-        Optimistically ASSUMES that the array is contiguous if it is not a NumPy or CuPy array,
-            as many libraries do not support non-contiguous arrays.
+        The input array or a contiguous copy.
+
+    Raises:
+        ValueError:
+            If the array is known to be non-contiguous but its namespace
+            cannot create a contiguous copy.
     """
     if is_contiguous(array):
         return array
@@ -38,4 +50,8 @@ def ensure_contiguous(array: Array, *, warn: bool = True) -> Array:
             stacklevel=2,
         )
     xp = array_namespace(array)
-    return xp.ascontiguousarray(array)
+    ascontiguousarray = getattr(xp, "ascontiguousarray", None)
+    if callable(ascontiguousarray):
+        return ascontiguousarray(array)
+
+    raise ValueError(f"array namespace {xp} does not support `ascontiguousarray`")
