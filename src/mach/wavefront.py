@@ -373,8 +373,8 @@ def spherical(
 
 
 def earliest_arrival(
-    element_positions_m: Real[Array, "n_elements xyz=3"],
-    element_delays_s: Real[Array, " n_elements"],
+    element_positions_m: Real[Array, "elements xyz=3"],
+    element_delays_s: Real[Array, " elements"],
     points_m: Float[Array, "*points xyz=3"],
     *,
     sound_speed_m_s: float,
@@ -430,8 +430,6 @@ def earliest_arrival(
     n_elements = int(element_positions_m.shape[0])
     if n_elements == 0:
         raise ValueError("element_positions_m must contain at least one element")
-    if element_delays_s.shape != (n_elements,):
-        raise ValueError("element_delays_s must have shape (n_elements,)")
     element_delay_distances_m = element_delays_s * sound_speed_m_s
 
     points_shape = points_m.shape[:-1]
