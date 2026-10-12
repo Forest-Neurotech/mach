@@ -4,11 +4,13 @@ import hashlib
 
 import numpy as np
 import scipy.io
-from jaxtyping import Float
+from beartype import beartype
+from jaxtyping import Float, jaxtyped
 
 from mach.io.utils import cached_download
 
 
+@jaxtyped(typechecker=beartype)
 def download_pymust_doppler_data() -> dict:
     """Download and load the PyMUST PWI_disk.mat test data.
 
@@ -29,6 +31,7 @@ def download_pymust_doppler_data() -> dict:
     return mat_data
 
 
+@jaxtyped(typechecker=beartype)
 def extract_pymust_params(mat_data: dict) -> dict:
     """Extract PyMUST parameters from loaded MATLAB data.
 
@@ -68,7 +71,11 @@ def extract_pymust_params(mat_data: dict) -> dict:
     return param
 
 
-def linear_probe_positions(n_elements: int, pitch: float) -> Float[np.ndarray, "{n_elements} xyz=3"]:
+@jaxtyped(typechecker=beartype)
+def linear_probe_positions(
+    n_elements: int | np.integer,
+    pitch: float | np.floating,
+) -> Float[np.ndarray, "{n_elements} xyz=3"]:
     """Generate element positions for a linear array.
 
     Args:
@@ -88,6 +95,7 @@ def linear_probe_positions(n_elements: int, pitch: float) -> Float[np.ndarray, "
     return positions
 
 
+@jaxtyped(typechecker=beartype)
 def scan_grid(*axes: np.ndarray) -> Float[np.ndarray, "points {len(axes)}"]:
     """Return a flattened meshgrid of the given axes.
 

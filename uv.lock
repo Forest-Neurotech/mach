@@ -1623,6 +1623,7 @@ source = { editable = "." }
 default-groups = "all"
 dependencies = [
     { name = "array-api-compat" },
+    { name = "beartype" },
     { name = "einops" },
     { name = "jaxtyping" },
 ]
@@ -1703,7 +1704,6 @@ docs = [
 profile = [
     { name = "array-api-extra" },
     { name = "array-api-strict" },
-    { name = "beartype" },
     { name = "h5py" },
     { name = "matplotlib" },
     { name = "numpy" },
@@ -1720,7 +1720,6 @@ profile = [
 test = [
     { name = "array-api-extra" },
     { name = "array-api-strict" },
-    { name = "beartype" },
     { name = "h5py" },
     { name = "matplotlib" },
     { name = "numpy" },
@@ -1737,6 +1736,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "array-api-compat", specifier = ">=1.11.0" },
+    { name = "beartype", specifier = ">=0.21.0" },
     { name = "colorcet", marker = "extra == 'vis'", specifier = ">=3.1.0" },
     { name = "cupy-cuda12x", marker = "extra == 'all'", specifier = ">=14.0.0" },
     { name = "einops", specifier = ">=0.8.0" },
@@ -1798,7 +1798,6 @@ docs = [
 profile = [
     { name = "array-api-extra", specifier = ">=0.10.0" },
     { name = "array-api-strict", specifier = ">=2.0.0" },
-    { name = "beartype", specifier = ">=0.21.0" },
     { name = "h5py", specifier = ">=3.12.1" },
     { name = "matplotlib", specifier = ">=3.9.4" },
     { name = "numpy", specifier = ">=2.0.2" },
@@ -1815,7 +1814,6 @@ profile = [
 test = [
     { name = "array-api-extra", specifier = ">=0.10.0" },
     { name = "array-api-strict", specifier = ">=2.0.0" },
-    { name = "beartype", specifier = ">=0.21.0" },
     { name = "h5py", specifier = ">=3.12.1" },
     { name = "matplotlib", specifier = ">=3.9.4" },
     { name = "numpy", specifier = ">=2.0.2" },

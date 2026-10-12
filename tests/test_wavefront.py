@@ -5,17 +5,9 @@ import math
 import array_api_strict as xp
 import pytest
 from array_api_extra.testing import assert_close
-from beartype import beartype
-from jaxtyping import jaxtyped
+from jaxtyping import TypeCheckError
 
-from mach.wavefront import earliest_arrival as earliest_arrival_unchecked
-from mach.wavefront import plane as plane_unchecked
-from mach.wavefront import spherical as spherical_unchecked
-
-# type-check functions during unit tests
-earliest_arrival = jaxtyped(typechecker=beartype)(earliest_arrival_unchecked)
-plane = jaxtyped(typechecker=beartype)(plane_unchecked)
-spherical = jaxtyped(typechecker=beartype)(spherical_unchecked)
+from mach.wavefront import earliest_arrival, plane, spherical
 
 
 @pytest.mark.no_cuda
@@ -96,6 +88,14 @@ class TestPlaneWave:
 
         with pytest.raises(ValueError, match="direction must be a unit vector"):
             plane(origin, points, direction)
+
+    def test_rejects_non_xyz_origin(self):
+        with pytest.raises(TypeCheckError):
+            plane(
+                xp.asarray([0.0, 0.0]),
+                xp.asarray([[0.0, 0.0, 1.0]]),
+                xp.asarray([0.0, 0.0, 1.0]),
+            )
 
     def test_different_origins(self):
         """Test with non-zero origin."""
@@ -481,4 +481,22 @@ class TestEarliestArrival:
                 xp.asarray([0.0]),
                 xp.asarray([[0.0, 0.0, 1.0]]),
                 sound_speed_m_s=0.0,
+            )
+
+    def test_rejects_non_xyz_element_positions(self):
+        with pytest.raises(TypeCheckError):
+            earliest_arrival(
+                xp.asarray([[0.0, 0.0]]),
+                xp.asarray([0.0]),
+                xp.asarray([[0.0, 0.0, 1.0]]),
+                sound_speed_m_s=1540.0,
+            )
+
+    def test_rejects_mismatched_element_counts(self):
+        with pytest.raises(TypeCheckError):
+            earliest_arrival(
+                xp.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+                xp.asarray([0.0]),
+                xp.asarray([[0.0, 0.0, 1.0]]),
+                sound_speed_m_s=1540.0,
             )

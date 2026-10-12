@@ -4,15 +4,9 @@ import math
 
 import array_api_strict as xp
 import pytest
-from beartype import beartype
-from jaxtyping import jaxtyped
+from jaxtyping import TypeCheckError
 
-from mach.geometry import spherical_to_cartesian as spherical_unchecked
-from mach.geometry import ultrasound_angles_to_cartesian as az_el_unchecked
-
-# type-check functions during unit tests
-ultrasound_angles_to_cartesian = jaxtyped(typechecker=beartype)(az_el_unchecked)
-spherical_to_cartesian = jaxtyped(typechecker=beartype)(spherical_unchecked)
+from mach.geometry import spherical_to_cartesian, ultrasound_angles_to_cartesian
 
 
 @pytest.mark.no_cuda
@@ -165,6 +159,13 @@ class TestAzElToCartesian:
         assert result.shape == (2, 3)
         assert float(result[0, 2]) == pytest.approx(1.0)  # First point z-coordinate
         assert float(result[1, 0]) == pytest.approx(1.0)  # Second point x-coordinate
+
+    def test_rejects_mismatched_angle_shapes(self):
+        with pytest.raises(TypeCheckError):
+            ultrasound_angles_to_cartesian(
+                xp.asarray([0.0, 0.1]),
+                xp.asarray([0.0, 0.1, 0.2]),
+            )
 
 
 @pytest.mark.no_cuda
