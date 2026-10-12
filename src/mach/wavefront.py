@@ -373,8 +373,8 @@ def spherical(
 
 
 def earliest_arrival(
-    element_positions_m: Real[Array, "elements xyz=3"],
-    element_delays_s: Real[Array, " elements"],
+    element_positions_m: Real[Array, "*elements xyz=3"],
+    element_delays_s: Real[Array, "*elements"],
     points_m: Float[Array, "*points xyz=3"],
     *,
     sound_speed_m_s: float,
@@ -427,10 +427,12 @@ def earliest_arrival(
 
     xp = array_namespace(element_positions_m, element_delays_s, points_m)
 
-    n_elements = element_positions_m.shape[0]
+    element_positions_flat_m = xp.reshape(element_positions_m, (-1, 3))
+    element_delays_flat_s = xp.reshape(element_delays_s, (-1,))
+    n_elements = element_positions_flat_m.shape[0]
     if n_elements == 0:
         raise ValueError("element_positions_m must contain at least one element")
-    element_delay_distances_m = element_delays_s * sound_speed_m_s
+    element_delay_distances_m = element_delays_flat_s * sound_speed_m_s
 
     points_shape = points_m.shape[:-1]
     points_flat = xp.reshape(points_m, (-1, 3))
@@ -446,7 +448,7 @@ def earliest_arrival(
 
         for element_start in range(0, n_elements, element_chunk_size):
             element_end = min(element_start + element_chunk_size, n_elements)
-            element_batch_m = element_positions_m[element_start:element_end, ...]
+            element_batch_m = element_positions_flat_m[element_start:element_end, ...]
             delay_distance_batch_m = element_delay_distances_m[element_start:element_end]
 
             point_element_offsets_m = point_batch[:, None, :] - element_batch_m[None, :, :]

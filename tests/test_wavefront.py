@@ -6,7 +6,7 @@ import array_api_strict as xp
 import pytest
 from array_api_extra.testing import assert_close
 from beartype import beartype
-from jaxtyping import jaxtyped
+from jaxtyping import TypeCheckError, jaxtyped
 
 from mach.wavefront import earliest_arrival as earliest_arrival_unchecked
 from mach.wavefront import plane as plane_unchecked
@@ -473,6 +473,40 @@ class TestEarliestArrival:
         )
 
         assert_close(chunked, direct)
+
+    def test_multidimensional_elements_match_flattened(self):
+        elements = xp.asarray([
+            [[-1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        ])
+        delays_s = xp.asarray([[0.15, 0.1], [0.05, 0.0]])
+        points = xp.asarray([[0.0, 0.0, 1.0], [1.0, 0.0, 2.0]])
+
+        multidimensional = earliest_arrival(
+            elements,
+            delays_s,
+            points,
+            sound_speed_m_s=2.0,
+            element_chunk_size=2,
+        )
+        flattened = earliest_arrival(
+            xp.reshape(elements, (-1, 3)),
+            xp.reshape(delays_s, (-1,)),
+            points,
+            sound_speed_m_s=2.0,
+            element_chunk_size=2,
+        )
+
+        assert_close(multidimensional, flattened)
+
+    def test_rejects_mismatched_element_dimensions(self):
+        with pytest.raises(TypeCheckError):
+            earliest_arrival(
+                xp.zeros((2, 2, 3)),
+                xp.zeros((4,)),
+                xp.zeros((1, 3)),
+                sound_speed_m_s=2.0,
+            )
 
     def test_rejects_nonpositive_sound_speed(self):
         with pytest.raises(ValueError, match="sound_speed_m_s must be positive"):
