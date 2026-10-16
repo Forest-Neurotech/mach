@@ -4,6 +4,7 @@ import hashlib
 
 import numpy as np
 import scipy.io
+from jaxtyping import Float
 
 from mach.io.utils import cached_download
 

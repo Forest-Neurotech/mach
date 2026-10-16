@@ -3,7 +3,7 @@
 from typing import NamedTuple
 
 from beartype import beartype
-from jaxtyping import Float, Real, jaxtyped
+from jaxtyping import Real, jaxtyped
 
 from mach._array_api import Array, array_namespace, vector_norm
 
@@ -379,9 +379,9 @@ def spherical(
 def earliest_arrival(
     element_positions_m: Real[Array, "elements xyz=3"],
     element_delays_s: Real[Array, " elements"],
-    points_m: Float[Array, "*points xyz=3"],
+    points_m: Real[Array, "*points xyz=3"],
     *,
-    sound_speed_m_s: float,
+    sound_speed_m_s: float | int,
     element_chunk_size: int = _DEFAULT_ELEMENT_CHUNK,
     point_chunk_size: int = _DEFAULT_POINT_CHUNK,
 ) -> Real[Array, "*points"]:
