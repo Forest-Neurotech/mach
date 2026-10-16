@@ -30,6 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "array-api-compat>=1.11.0",
+    "beartype>=0.21.0",
     "einops>=0.8.0",
     "jaxtyping>=0.3.4",
 ]
@@ -70,7 +71,6 @@ dev = [
 test = [
     "array-api-extra>=0.10.0",
     "array-api-strict>=2.0.0",
-    "beartype>=0.21.0",
     "h5py>=3.12.1",
     "matplotlib>=3.9.4",
     "numpy>=2.0.2",

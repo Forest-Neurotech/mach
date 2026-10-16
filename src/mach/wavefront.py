@@ -2,7 +2,8 @@
 
 from typing import NamedTuple
 
-from jaxtyping import Float, Real
+from beartype import beartype
+from jaxtyping import Real, jaxtyped
 
 from mach._array_api import Array, array_namespace, vector_norm
 
@@ -21,6 +22,7 @@ class _ApertureGeometry(NamedTuple):
     elevation_half_width_m: Array
 
 
+@jaxtyped(typechecker=beartype)
 def plane(
     origin_m: Real[Array, "xyz=3"],
     points_m: Real[Array, "*points xyz=3"],
@@ -298,6 +300,7 @@ def _unified_spherical_bounded(
     )
 
 
+@jaxtyped(typechecker=beartype)
 def spherical(
     origin_m: Real[Array, "xyz=3"],
     points_m: Real[Array, "*points xyz=3"],
@@ -372,12 +375,13 @@ def spherical(
     )
 
 
+@jaxtyped(typechecker=beartype)
 def earliest_arrival(
     element_positions_m: Real[Array, "elements xyz=3"],
     element_delays_s: Real[Array, " elements"],
-    points_m: Float[Array, "*points xyz=3"],
+    points_m: Real[Array, "*points xyz=3"],
     *,
-    sound_speed_m_s: float,
+    sound_speed_m_s: float | int,
     element_chunk_size: int = _DEFAULT_ELEMENT_CHUNK,
     point_chunk_size: int = _DEFAULT_POINT_CHUNK,
 ) -> Real[Array, "*points"]:

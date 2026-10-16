@@ -68,7 +68,10 @@ def extract_pymust_params(mat_data: dict) -> dict:
     return param
 
 
-def linear_probe_positions(n_elements: int, pitch: float) -> Float[np.ndarray, "{n_elements} xyz=3"]:
+def linear_probe_positions(
+    n_elements: int,
+    pitch: float | int,
+) -> Float[np.ndarray, "{n_elements} xyz=3"]:
     """Generate element positions for a linear array.
 
     Args:

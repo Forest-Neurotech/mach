@@ -23,11 +23,13 @@ import math
 import numbers
 import types
 
-from jaxtyping import Real
+from beartype import beartype
+from jaxtyping import Real, jaxtyped
 
 from mach._array_api import Array, _ArrayNamespace, array_namespace
 
 
+@jaxtyped(typechecker=beartype)
 def ultrasound_angles_to_cartesian(
     azimuth_rad: Real[Array, " *angles"] | float | int,
     elevation_rad: Real[Array, " *angles"] | float | int,
@@ -86,6 +88,7 @@ def ultrasound_angles_to_cartesian(
     return result
 
 
+@jaxtyped(typechecker=beartype)
 def spherical_to_cartesian(
     theta_rad: Real[Array, " *angles"] | float | int,
     phi_rad: Real[Array, " *angles"] | float | int,
