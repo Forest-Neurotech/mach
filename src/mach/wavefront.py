@@ -389,9 +389,12 @@ def earliest_arrival(
 
     Args:
         element_positions_m:
-            Positions of the active transmit elements, in meters.
+            Positions of the active transmit elements, in meters. Leading
+            element dimensions may be multidimensional, e.g. ``(rows, cols, 3)``
+            for a 2D matrix array.
         element_delays_s:
-            Per-element transmit delays, in seconds. Delays must share the same
+            Per-element transmit delays, in seconds, with the same leading
+            shape as ``element_positions_m``. Delays must share the same
             time reference as the receive chain (for example, normalized so the
             earliest firing element has delay zero).
         points_m:
@@ -410,9 +413,10 @@ def earliest_arrival(
 
     Raises:
         ValueError:
-            If sound speed or a chunk size is nonpositive, no elements are
-            provided, or the element positions and delays have incompatible
-            shapes.
+            If sound speed or a chunk size is nonpositive, or no elements are
+            provided.
+        jaxtyping.TypeCheckError:
+            If the element positions and delays have incompatible shapes.
 
     Notes:
         This is the earliest arrival, not necessarily the strongest pulse time
