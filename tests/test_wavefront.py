@@ -474,6 +474,31 @@ class TestEarliestArrival:
 
         assert_close(chunked, direct)
 
+    def test_multidimensional_elements_match_flattened(self):
+        elements = xp.asarray([
+            [[-1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        ])
+        delays_s = xp.asarray([[0.15, 0.1], [0.05, 0.0]])
+        points = xp.asarray([[0.0, 0.0, 1.0], [1.0, 0.0, 2.0]])
+
+        multidimensional = earliest_arrival(
+            elements,
+            delays_s,
+            points,
+            sound_speed_m_s=2.0,
+            element_chunk_size=2,
+        )
+        flattened = earliest_arrival(
+            xp.reshape(elements, (-1, 3)),
+            xp.reshape(delays_s, (-1,)),
+            points,
+            sound_speed_m_s=2.0,
+            element_chunk_size=2,
+        )
+
+        assert_close(multidimensional, flattened)
+
     def test_rejects_nonpositive_sound_speed(self):
         with pytest.raises(ValueError, match="sound_speed_m_s must be positive"):
             earliest_arrival(
@@ -492,11 +517,18 @@ class TestEarliestArrival:
                 sound_speed_m_s=1540.0,
             )
 
-    def test_rejects_mismatched_element_counts(self):
+    @pytest.mark.parametrize(
+        ("positions_shape", "delays_shape"),
+        [
+            ((2, 3), (1,)),  # different element counts
+            ((2, 2, 3), (4,)),  # same element count, different element dimensions
+        ],
+    )
+    def test_rejects_mismatched_element_shapes(self, positions_shape, delays_shape):
         with pytest.raises(TypeCheckError):
             earliest_arrival(
-                xp.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
-                xp.asarray([0.0]),
+                xp.zeros(positions_shape),
+                xp.zeros(delays_shape),
                 xp.asarray([[0.0, 0.0, 1.0]]),
                 sound_speed_m_s=1540.0,
             )

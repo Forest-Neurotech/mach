@@ -377,8 +377,8 @@ def spherical(
 
 @jaxtyped(typechecker=beartype)
 def earliest_arrival(
-    element_positions_m: Real[Array, "elements xyz=3"],
-    element_delays_s: Real[Array, " elements"],
+    element_positions_m: Real[Array, "*elements xyz=3"],
+    element_delays_s: Real[Array, " *elements"],
     points_m: Real[Array, "*points xyz=3"],
     *,
     sound_speed_m_s: float | int,
@@ -389,9 +389,12 @@ def earliest_arrival(
 
     Args:
         element_positions_m:
-            Positions of the active transmit elements, in meters.
+            Positions of the active transmit elements, in meters. Leading
+            element dimensions may be multidimensional, e.g. ``(rows, cols, 3)``
+            for a 2D matrix array.
         element_delays_s:
-            Per-element transmit delays, in seconds. Delays must share the same
+            Per-element transmit delays, in seconds, with the same leading
+            shape as ``element_positions_m``. Delays must share the same
             time reference as the receive chain (for example, normalized so the
             earliest firing element has delay zero).
         points_m:
@@ -410,9 +413,10 @@ def earliest_arrival(
 
     Raises:
         ValueError:
-            If sound speed or a chunk size is nonpositive, no elements are
-            provided, or the element positions and delays have incompatible
-            shapes.
+            If sound speed or a chunk size is nonpositive, or no elements are
+            provided.
+        jaxtyping.TypeCheckError:
+            If the element positions and delays have incompatible shapes.
 
     Notes:
         This is the earliest arrival, not necessarily the strongest pulse time
@@ -431,10 +435,12 @@ def earliest_arrival(
 
     xp = array_namespace(element_positions_m, element_delays_s, points_m)
 
-    n_elements = element_positions_m.shape[0]
+    element_positions_flat_m = xp.reshape(element_positions_m, (-1, 3))
+    element_delays_flat_s = xp.reshape(element_delays_s, (-1,))
+    n_elements = element_positions_flat_m.shape[0]
     if n_elements == 0:
         raise ValueError("element_positions_m must contain at least one element")
-    element_delay_distances_m = element_delays_s * sound_speed_m_s
+    element_delay_distances_m = element_delays_flat_s * sound_speed_m_s
 
     points_shape = points_m.shape[:-1]
     points_flat = xp.reshape(points_m, (-1, 3))
@@ -450,7 +456,7 @@ def earliest_arrival(
 
         for element_start in range(0, n_elements, element_chunk_size):
             element_end = min(element_start + element_chunk_size, n_elements)
-            element_batch_m = element_positions_m[element_start:element_end, ...]
+            element_batch_m = element_positions_flat_m[element_start:element_end, ...]
             delay_distance_batch_m = element_delay_distances_m[element_start:element_end]
 
             point_element_offsets_m = point_batch[:, None, :] - element_batch_m[None, :, :]
