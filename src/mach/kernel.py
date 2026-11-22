@@ -105,23 +105,12 @@ def beamform(  # noqa: C901
             - InterpolationType.Quadratic: Quadratic interpolation (higher quality, slower)
 
         synchronize:
-            Wait for GPU completion before returning (default). With False, all
-            arrays must be contiguous and on the current CUDA device, with
-            float32 geometry and float32 RF or complex64 IQ. If out is omitted,
-            call with the array library using CUDA's default stream so that
-            output initialization is ordered before the launch. Order input
-            writes and any caller-provided output initialization before launch
-            on the default stream, and order consumers after it. Keep all
-            buffers alive until GPU work completes. For multiple host-resident
-            batches, alternate between two device input slots to overlap the
-            next transfer with beamforming, whether the batches are prerecorded
-            or arrive live. Queue each launch after its copy-completion event
-            and each slot's next transfer after Mach has finished reading it.
-            Refill pinned host buffers only after their copies complete. Reuse
-            output buffers only after their last consumer finishes, and keep
-            output storage separate from inputs. A single input slot is safe
-            with the same ordering. Execution errors may surface at a later
-            synchronization.
+            Wait for GPU completion (default). With False, use contiguous arrays
+            of the expected dtypes on the current CUDA device. Order input writes,
+            output initialization, and consumers relative to the kernel on CUDA's
+            default stream. If Mach allocates out, call from the default stream.
+            Keep buffers alive and delay reuse until their last GPU use. Output
+            storage must be separate from inputs.
 
     Returns:
         Beamformed data with shape (n_scan, nframes).
