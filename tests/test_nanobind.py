@@ -88,6 +88,40 @@ def test_beamform_with_real_data(xp, test_data):
         assert array_namespace(output_real) == array_namespace(rf)
 
 
+def test_async_beamform_requires_device_buffers():
+    rf, _, coords, grid, arrivals, *_ = create_test_data(np)
+    kwargs = dict(
+        f_number=2.0, rx_start_s=0.0, sampling_freq_hz=1e6, sound_speed_m_s=1500.0, synchronize=False
+    )
+
+    with pytest.raises(ValueError, match="CUDA inputs and output"):
+        beamform(rf, coords, grid, arrivals, **kwargs)
+
+
+@pytest.mark.parametrize("complex_input", [False, True])
+@pytest.mark.parametrize("preallocate_output", [False, True])
+def test_async_beamform_matches_synchronous(complex_input, preallocate_output):
+    cp = pytest.importorskip("cupy")
+    with cp.cuda.Stream.null:
+        rf, iq, coords, grid, arrivals, n_frames, _, _, n_points = create_test_data(cp)
+        channel_data = iq if complex_input else rf
+        kwargs = dict(
+            f_number=2.0,
+            rx_start_s=0.0,
+            sampling_freq_hz=1e6,
+            sound_speed_m_s=1500.0,
+            modulation_freq_hz=0.0,
+        )
+        expected = beamform(channel_data, coords, grid, arrivals, **kwargs)
+        out = cp.zeros((n_points, n_frames), dtype=channel_data.dtype) if preallocate_output else None
+
+        result = beamform(channel_data, coords, grid, arrivals, out=out, synchronize=False, **kwargs)
+        # Queue the consumer on the launch stream before waiting for completion.
+        power = cp.sum(cp.abs(result) ** 2, axis=-1)
+        cp.cuda.Stream.null.synchronize()
+        cp.testing.assert_allclose(power, cp.sum(cp.abs(expected) ** 2, axis=-1), rtol=1e-5, atol=1e-6)
+
+
 def test_beamform_with_complex_data(xp, test_data):
     """Test beamforming with complex data."""
     _, rf_complex, coords, grid, idt_matrix, nframes, _, _, n_scan_points = test_data

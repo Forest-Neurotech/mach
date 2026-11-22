@@ -720,6 +720,7 @@ __global__ void beamformKernel(
  * @param modulation_freq_hz Modulation frequency (Hz)
  * @param tukey_alpha Tukey window alpha for apodization (0=no apodization, 1=full apodization)
  * @param interp_type Interpolation method for sensor data sampling
+ * @param synchronize Whether to wait for GPU completion before returning
  */
 template<typename DataType>
 void _beamform_impl(
@@ -738,7 +739,8 @@ void _beamform_impl(
     float sound_speed_m_s,
     float modulation_freq_hz,
     float tukey_alpha,
-    InterpolationType interp_type
+    InterpolationType interp_type,
+    bool synchronize
 ) {
 #ifdef CUDA_PROFILE
     TIME_FUNCTION();
@@ -880,19 +882,24 @@ void _beamform_impl(
             );
         }
     }
-    // Wait for kernel to complete
-    checkCudaErrors(cudaDeviceSynchronize());
+    if (synchronize) {
+        checkCudaErrors(cudaDeviceSynchronize());
+    } else {
+        checkCudaErrors(cudaPeekAtLastError());
+    }
 
 #ifdef CUDA_PROFILE
     } // End of kernel_execution section
 
-    checkCudaErrors(cudaEventRecord(stop));
-    checkCudaErrors(cudaEventSynchronize(stop));
+    if (synchronize) {
+        checkCudaErrors(cudaEventRecord(stop));
+        checkCudaErrors(cudaEventSynchronize(stop));
 
-    // Calculate and print elapsed time
-    float milliseconds = 0;
-    checkCudaErrors(cudaEventElapsedTime(&milliseconds, start, stop));
-    std::cout << "Kernel execution time: " << milliseconds << " ms" << std::endl;
+        // Calculate and print elapsed time
+        float milliseconds = 0;
+        checkCudaErrors(cudaEventElapsedTime(&milliseconds, start, stop));
+        std::cout << "Kernel execution time: " << milliseconds << " ms" << std::endl;
+    }
 
     // Clean up timing events
     checkCudaErrors(cudaEventDestroy(start));
@@ -1038,6 +1045,7 @@ using device_unique_ptr = std::unique_ptr<
  * @param modulation_freq_hz Modulation frequency (Hz)
  * @param tukey_alpha Tukey window alpha for apodization (0=no apodization, 1=full apodization)
  * @param interp_type Interpolation method for sensor data sampling
+ * @param synchronize Whether to wait for GPU completion before returning
  */
 template<typename DataType>
 void beamform(
@@ -1052,7 +1060,8 @@ void beamform(
     float sound_speed_m_s,
     float modulation_freq_hz,
     float tukey_alpha,
-    InterpolationType interp_type
+    InterpolationType interp_type,
+    bool synchronize
 ) {
 #ifdef CUDA_PROFILE
     TIME_FUNCTION();
@@ -1075,6 +1084,18 @@ void beamform(
 
     // If all arrays are already on CUDA, use the direct kernel call
     bool all_cuda = (cpu_count == 0);
+    if (!synchronize) {
+        if (!all_cuda) {
+            throw std::invalid_argument("synchronize=False requires CUDA inputs and output.");
+        }
+        int device_id;
+        checkCudaErrors(cudaGetDevice(&device_id));
+        if (channel_data.device_id() != device_id || rx_coords_m.device_id() != device_id ||
+            scan_coords_m.device_id() != device_id || tx_wave_arrivals_s.device_id() != device_id ||
+            out.device_id() != device_id) {
+            throw std::invalid_argument("synchronize=False requires all arrays on the current CUDA device.");
+        }
+    }
     if (all_cuda) {
         // All arrays are on GPU - use direct kernel call
         const float3* d_rx_coords_m = reinterpret_cast<const float3*>(rx_coords_m.data());
@@ -1086,13 +1107,13 @@ void beamform(
             float2* d_out = reinterpret_cast<float2*>(out.data());
             _beamform_impl<float2>(d_channel_data, d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 n_receive_elements, n_samples, n_output_voxels, n_frames,
-                f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type);
+                f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type, synchronize);
         } else if constexpr (std::is_same_v<DataType, float>) {
             const float* d_channel_data = channel_data.data();
             float* d_out = out.data();
             _beamform_impl<float>(d_channel_data, d_rx_coords_m, d_scan_coords_m, d_tx_arrivals_s, d_out,
                 n_receive_elements, n_samples, n_output_voxels, n_frames,
-                f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type);
+                f_number, rx_start_s, sampling_freq_hz, sound_speed_m_s, modulation_freq_hz, tukey_alpha, interp_type, synchronize);
         }
         return;
     }
@@ -1179,7 +1200,8 @@ void beamform(
             sound_speed_m_s,
             modulation_freq_hz,
             tukey_alpha,
-            interp_type
+            interp_type,
+            true
         );
     } else if constexpr (std::is_same_v<DataType, float>) {
         _beamform_impl<float>(
@@ -1198,7 +1220,8 @@ void beamform(
             sound_speed_m_s,
             modulation_freq_hz,
             tukey_alpha,
-            interp_type
+            interp_type,
+            true
         );
     }
 #ifdef CUDA_PROFILE
@@ -1248,7 +1271,8 @@ NB_MODULE(_cuda_impl, m) {
         "sound_speed_m_s"_a,
         "modulation_freq_hz"_a,
         "tukey_alpha"_a = 0.5f,
-        "interp_type"_a = InterpolationType::Linear);
+        "interp_type"_a = InterpolationType::Linear,
+        "synchronize"_a = true);
 
     m.def("beamform", &beamform<float>,
         "channel_data"_a.noconvert(),
@@ -1262,5 +1286,6 @@ NB_MODULE(_cuda_impl, m) {
         "sound_speed_m_s"_a,
         "modulation_freq_hz"_a = 0.0f,
         "tukey_alpha"_a = 0.5f,
-        "interp_type"_a = InterpolationType::Linear);
+        "interp_type"_a = InterpolationType::Linear,
+        "synchronize"_a = true);
 }
