@@ -90,9 +90,13 @@ def test_beamform_with_real_data(xp, test_data):
 
 def test_async_beamform_requires_device_buffers():
     rf, _, coords, grid, arrivals, *_ = create_test_data(np)
-    kwargs = dict(
-        f_number=2.0, rx_start_s=0.0, sampling_freq_hz=1e6, sound_speed_m_s=1500.0, synchronize=False
-    )
+    kwargs = {
+        "f_number": 2.0,
+        "rx_start_s": 0.0,
+        "sampling_freq_hz": 1e6,
+        "sound_speed_m_s": 1500.0,
+        "synchronize": False,
+    }
 
     with pytest.raises(ValueError, match="CUDA inputs and output"):
         beamform(rf, coords, grid, arrivals, **kwargs)
@@ -105,13 +109,13 @@ def test_async_beamform_matches_synchronous(complex_input, preallocate_output):
     with cp.cuda.Stream.null:
         rf, iq, coords, grid, arrivals, n_frames, _, _, n_points = create_test_data(cp)
         channel_data = iq if complex_input else rf
-        kwargs = dict(
-            f_number=2.0,
-            rx_start_s=0.0,
-            sampling_freq_hz=1e6,
-            sound_speed_m_s=1500.0,
-            modulation_freq_hz=0.0,
-        )
+        kwargs = {
+            "f_number": 2.0,
+            "rx_start_s": 0.0,
+            "sampling_freq_hz": 1e6,
+            "sound_speed_m_s": 1500.0,
+            "modulation_freq_hz": 0.0,
+        }
         expected = beamform(channel_data, coords, grid, arrivals, **kwargs)
         out = cp.zeros((n_points, n_frames), dtype=channel_data.dtype) if preallocate_output else None
 
