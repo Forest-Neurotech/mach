@@ -20,6 +20,12 @@ import pymust
 from mach.io.must import download_pymust_doppler_data, extract_pymust_params, linear_probe_positions, scan_grid
 from mach.kernel import beamform
 
+# Match the PyMUST rotating-disk grid in the standard benchmark (tests/compare/conftest.py).
+PYMUST_LATERAL_BOUNDS_M = (-0.0125, 0.0125)
+PYMUST_ELEVATION_M = 0.0
+PYMUST_DEPTH_BOUNDS_M = (0.010, 0.035)
+PYMUST_GRID_POINTS_PER_AXIS = 251
+
 
 def run_batches(batches, geometry, slots, synchronize, *, capture=False):
     """Copy from pinned host buffers, beamform, and reduce on the default stream."""
@@ -97,7 +103,11 @@ def load_phantom(batch_size):
         batches.append(batch)
 
     with cp.cuda.Stream.null:
-        grid = scan_grid(np.linspace(-0.0125, 0.0125, 251), np.array([0.0]), np.linspace(0.01, 0.035, 251))
+        grid = scan_grid(
+            np.linspace(*PYMUST_LATERAL_BOUNDS_M, num=PYMUST_GRID_POINTS_PER_AXIS),
+            np.array([PYMUST_ELEVATION_M]),
+            np.linspace(*PYMUST_DEPTH_BOUNDS_M, num=PYMUST_GRID_POINTS_PER_AXIS),
+        )
         geometry = {
             "rx_coords_m": cp.asarray(linear_probe_positions(params["Nelements"], params["pitch"]), dtype=cp.float32),
             "scan_coords_m": cp.asarray(grid, dtype=cp.float32),
