@@ -15,7 +15,6 @@ _[Benchmark](https://github.com/Forest-Neurotech/mach/blob/main/BENCHMARKS.md): 
 
 * ⚡ **Ultra-fast beamforming**: ~10x faster than prior state-of-the-art
 * 🚀 **GPU-accelerated**: Leverages CUDA for maximum performance on NVIDIA GPUs
-* **Async submission**: GPU-resident callers can enqueue beamforming on the CUDA default stream and wait for completion later.
 * 🎯 **Optimized for research**: Designed for functional ultrasound imaging (fUSI) and other ultrafast, high-channel-count, or volumetric-ensemble imaging
 * 🐍 **Python bindings**: Zero-copy integration with CuPy, and JAX arrays via [nanobind](https://nanobind.readthedocs.io/en/latest/index.html). NumPy support included.
 * 🔬 **Validated**: Matches [vbeam](https://github.com/magnusdk/vbeam) and [PyMUST](https://github.com/creatis-ULTIM/PyMUST) [outputs](https://github.com/Forest-Neurotech/mach/tree/812062f/tests/compare)

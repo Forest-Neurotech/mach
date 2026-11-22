@@ -112,8 +112,16 @@ def beamform(  # noqa: C901
             output initialization is ordered before the launch. Order input
             writes and any caller-provided output initialization before launch
             on the default stream, and order consumers after it. Keep all
-            buffers alive until GPU work completes. Execution errors may surface
-            at a later synchronization.
+            buffers alive until GPU work completes. For multiple host-resident
+            batches, alternate between two device input slots to overlap the
+            next transfer with beamforming, whether the batches are prerecorded
+            or arrive live. Queue each launch after its copy-completion event
+            and each slot's next transfer after Mach has finished reading it.
+            Refill pinned host buffers only after their copies complete. Reuse
+            output buffers only after their last consumer finishes, and keep
+            output storage separate from inputs. A single input slot is safe
+            with the same ordering. Execution errors may surface at a later
+            synchronization.
 
     Returns:
         Beamformed data with shape (n_scan, nframes).
@@ -236,19 +244,12 @@ def beamform(  # noqa: C901
     if out is not None and not hasattr(out, "__dlpack_device__"):
         raise TypeError("Array 'out' does not support DLPack protocol")
 
-    nframes = channel_data.shape[2]
-    n_scan = scan_coords_m.shape[0]
-    is_complex = channel_data.dtype in (xp_data.complex64, xp_data.complex128)
-    output_dtype = xp_data.complex64 if is_complex else xp_data.float32
-
-    if synchronize:
-        rx_coords_m = try_contiguous(xp_coords.astype(rx_coords_m, xp_coords.float32, copy=False))
-        scan_coords_m = try_contiguous(xp_grid.astype(scan_coords_m, xp_grid.float32, copy=False))
-        tx_wave_arrivals_s = try_contiguous(xp_idt.astype(tx_wave_arrivals_s, xp_idt.float32, copy=False))
-        channel_data = try_contiguous(xp_data.astype(channel_data, output_dtype, copy=False))
-    else:
+    if not synchronize:
+        # Reject inputs that would otherwise need temporary casts or copies.
+        is_iq = channel_data.dtype in (xp_data.complex64, xp_data.complex128)
+        channel_dtype = xp_data.complex64 if is_iq else xp_data.float32
         for array, dtype, name in (
-            (channel_data, output_dtype, "channel_data"),
+            (channel_data, channel_dtype, "channel_data"),
             (rx_coords_m, xp_coords.float32, "rx_coords_m"),
             (scan_coords_m, xp_grid.float32, "scan_coords_m"),
             (tx_wave_arrivals_s, xp_idt.float32, "tx_wave_arrivals_s"),
@@ -256,19 +257,42 @@ def beamform(  # noqa: C901
             if array.dtype != dtype or not is_contiguous(cast(Array, array)):
                 raise ValueError(f"synchronize=False requires contiguous {name} with dtype {dtype}.")
 
-    if modulation_freq_hz is None:
-        if is_complex:
+    # Ensure float32 dtype for coordinate arrays
+    rx_coords_m = xp_coords.astype(rx_coords_m, xp_coords.float32, copy=False)
+    scan_coords_m = xp_grid.astype(scan_coords_m, xp_grid.float32, copy=False)
+    tx_wave_arrivals_s = xp_idt.astype(tx_wave_arrivals_s, xp_idt.float32, copy=False)
+
+    nframes = channel_data.shape[2]
+    n_scan = scan_coords_m.shape[0]
+
+    # Determine data type and prepare sensor data
+    is_complex = (channel_data.dtype == xp_data.complex64) or (channel_data.dtype == xp_data.complex128)
+    if is_complex:
+        channel_data = xp_data.astype(channel_data, xp_data.complex64, copy=False)
+        output_dtype = xp_data.complex64
+        if modulation_freq_hz is None:
             raise ValueError(
                 "modulation_freq_hz is required for complex phase-correction. set it to 0 if no demodulation was used."
             )
-        modulation_freq_hz = 0.0
+    else:
+        channel_data = xp_data.astype(channel_data, xp_data.float32, copy=False)
+        output_dtype = xp_data.float32
+        if modulation_freq_hz is None:
+            modulation_freq_hz = 0.0
+
+    # Check for contiguous arrays in libraries that support it
+    channel_data = try_contiguous(channel_data)
+    rx_coords_m = try_contiguous(rx_coords_m)
+    scan_coords_m = try_contiguous(scan_coords_m)
+    tx_wave_arrivals_s = try_contiguous(tx_wave_arrivals_s)
 
     if out is None:
         out = xp_data.zeros((n_scan, nframes), dtype=output_dtype)
     else:
         # Validate output array dtype matches input
-        if out.dtype != output_dtype:
-            raise ValueError(f"Output array dtype {out.dtype} doesn't match expected {output_dtype}")
+        expected_dtype = xp_data.complex64 if is_complex else xp_data.float32
+        if out.dtype != expected_dtype:
+            raise ValueError(f"Output array dtype {out.dtype} doesn't match expected {expected_dtype}")
 
     if not is_writeable_array(out):
         raise ValueError("Output array `out` is not writable. Try using cupy or pytorch for the output array.")
