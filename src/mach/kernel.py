@@ -33,6 +33,7 @@ def beamform(  # noqa: C901
     modulation_freq_hz: float | None = None,
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
+    synchronize: bool = True,
 ) -> Array:
     """CUDA ultrasound beamforming with automatic GPU/CPU dispatch.
 
@@ -76,6 +77,8 @@ def beamform(  # noqa: C901
         out:
             Optional output array with shape (n_scan, nframes).
             Must match input type: complex64 for I/Q, float32 for RF.
+            Beamforming accumulates into a CUDA output. Zero it before the call
+            for a fresh result. If omitted, Mach allocates a zeroed output.
         rx_start_s:
             Receive start time offset in seconds. This corresponds to t0 in the literature
             (biomecardio.com/publis/ultrasonics21.pdf) - the time when the 0th sample
@@ -102,6 +105,14 @@ def beamform(  # noqa: C901
             - InterpolationType.NearestNeighbor: Nearest neighbor (fastest, lower quality)
             - InterpolationType.Linear: Linear interpolation (default, good balance)
             - InterpolationType.Quadratic: Quadratic interpolation (higher quality, slower)
+
+        synchronize:
+            Wait for GPU completion (default). With False, use contiguous arrays
+            of the expected dtypes on the current CUDA device. Order input writes,
+            output initialization, and consumers relative to the kernel on CUDA's
+            default stream. If Mach allocates out, call from the default stream.
+            Keep buffers alive and delay reuse until their last GPU use. Output
+            storage must be separate from inputs.
 
     Returns:
         Beamformed data with shape (n_scan, nframes).
@@ -224,6 +235,19 @@ def beamform(  # noqa: C901
     if out is not None and not hasattr(out, "__dlpack_device__"):
         raise TypeError("Array 'out' does not support DLPack protocol")
 
+    if not synchronize:
+        # Reject inputs that would otherwise need temporary casts or copies.
+        is_iq = channel_data.dtype in (xp_data.complex64, xp_data.complex128)
+        channel_dtype = xp_data.complex64 if is_iq else xp_data.float32
+        for array, dtype, name in (
+            (channel_data, channel_dtype, "channel_data"),
+            (rx_coords_m, xp_coords.float32, "rx_coords_m"),
+            (scan_coords_m, xp_grid.float32, "scan_coords_m"),
+            (tx_wave_arrivals_s, xp_idt.float32, "tx_wave_arrivals_s"),
+        ):
+            if array.dtype != dtype or not is_contiguous(cast(Array, array)):
+                raise ValueError(f"synchronize=False requires contiguous {name} with dtype {dtype}.")
+
     # Ensure float32 dtype for coordinate arrays
     rx_coords_m = xp_coords.astype(rx_coords_m, xp_coords.float32, copy=False)
     scan_coords_m = xp_grid.astype(scan_coords_m, xp_grid.float32, copy=False)
@@ -284,6 +308,7 @@ def beamform(  # noqa: C901
         modulation_freq_hz=modulation_freq_hz,
         tukey_alpha=tukey_alpha,
         interp_type=interp_type,
+        synchronize=synchronize,
     )
 
     return cast(Array, out)

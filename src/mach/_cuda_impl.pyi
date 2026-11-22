@@ -35,6 +35,7 @@ def beamform(
     modulation_freq_hz: float,
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
+    synchronize: bool = True,
 ) -> None: ...
 @overload
 def beamform(
@@ -50,4 +51,5 @@ def beamform(
     modulation_freq_hz: float = 0.0,
     tukey_alpha: float = 0.5,
     interp_type: InterpolationType = InterpolationType.Linear,
+    synchronize: bool = True,
 ) -> None: ...
