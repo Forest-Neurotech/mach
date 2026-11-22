@@ -77,6 +77,8 @@ def beamform(  # noqa: C901
         out:
             Optional output array with shape (n_scan, nframes).
             Must match input type: complex64 for I/Q, float32 for RF.
+            Beamforming accumulates into a CUDA output. Zero it before the call
+            for a fresh result. If omitted, Mach allocates a zeroed output.
         rx_start_s:
             Receive start time offset in seconds. This corresponds to t0 in the literature
             (biomecardio.com/publis/ultrasonics21.pdf) - the time when the 0th sample

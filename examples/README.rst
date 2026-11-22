@@ -45,5 +45,6 @@ The benchmark compares synchronous and asynchronous launches with one and two
 device slots. It starts with prepared IQ in pinned host memory and ends after
 the GPU power reduction. This applies to both prerecorded batches and batches
 prepared during live acquisition. Data loading and RF-to-IQ conversion are
-outside the timed interval. Use ``--verify-only`` to check each batch against
+outside the timed interval. The per-batch copy-start-to-power-done metric includes
+any time spent waiting for earlier batches on the compute stream. Use ``--verify-only`` to check each batch against
 the synchronous reference without running the timed trials.

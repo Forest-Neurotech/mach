@@ -102,13 +102,74 @@ def test_async_beamform_requires_device_buffers():
         beamform(rf, coords, grid, arrivals, **kwargs)
 
 
+@pytest.mark.parametrize(
+    ("target", "wrong_dtype", "message"),
+    [
+        ("channel_data", False, "contiguous channel_data"),
+        ("channel_data", True, "dtype"),
+        ("out", False, "out.*contiguous"),
+        ("out", True, "Output array dtype"),
+    ],
+)
+def test_async_beamform_rejects_incompatible_arrays(target, wrong_dtype, message):
+    cp = pytest.importorskip("cupy")
+    rf, _, coords, grid, arrivals, n_frames, _, _, n_points = create_test_data(cp)
+    out = cp.zeros((n_points, n_frames), dtype=cp.float32)
+    if target == "channel_data":
+        rf = rf.astype(cp.float64) if wrong_dtype else rf[:, ::2, :]
+    else:
+        out = out.astype(cp.float64) if wrong_dtype else cp.zeros((n_points, n_frames * 2), dtype=cp.float32)[:, ::2]
+    with pytest.raises(ValueError, match=message):
+        beamform(
+            rf,
+            coords,
+            grid,
+            arrivals,
+            out=out,
+            f_number=2.0,
+            rx_start_s=0.0,
+            sampling_freq_hz=1e6,
+            sound_speed_m_s=1500.0,
+            synchronize=False,
+        )
+
+
+def test_async_beamform_rejects_array_on_another_device():
+    cp = pytest.importorskip("cupy")
+    if cp.cuda.runtime.getDeviceCount() < 2:
+        pytest.skip("requires two CUDA devices")
+    with cp.cuda.Device(1):
+        rf, _, _, _, _, *_ = create_test_data(cp)
+        cp.cuda.Device().synchronize()
+    with cp.cuda.Device(0):
+        _, _, coords, grid, arrivals, n_frames, _, _, n_points = create_test_data(cp)
+        out = cp.zeros((n_points, n_frames), dtype=cp.float32)
+        with pytest.raises(ValueError, match="current CUDA device"):
+            beamform(
+                rf,
+                coords,
+                grid,
+                arrivals,
+                out=out,
+                f_number=2.0,
+                rx_start_s=0.0,
+                sampling_freq_hz=1e6,
+                sound_speed_m_s=1500.0,
+                synchronize=False,
+            )
+
+
 @pytest.mark.parametrize("complex_input", [False, True])
-@pytest.mark.parametrize("preallocate_output", [False, True])
-def test_async_beamform_matches_synchronous(complex_input, preallocate_output):
+@pytest.mark.parametrize("initial_output", [None, 0, 3])
+def test_async_beamform_matches_synchronous(complex_input, initial_output):
     cp = pytest.importorskip("cupy")
     with cp.cuda.Stream.null:
         rf, iq, coords, grid, arrivals, n_frames, _, _, n_points = create_test_data(cp)
         channel_data = iq if complex_input else rf
+        channel_data.fill(1)
+        coords.fill(0)
+        grid.fill(0)
+        grid[:, 2] = 0.02
         kwargs = {
             "f_number": 2.0,
             "rx_start_s": 0.0,
@@ -117,12 +178,17 @@ def test_async_beamform_matches_synchronous(complex_input, preallocate_output):
             "modulation_freq_hz": 0.0,
         }
         expected = beamform(channel_data, coords, grid, arrivals, **kwargs)
-        out = cp.zeros((n_points, n_frames), dtype=channel_data.dtype) if preallocate_output else None
+        out = None
+        if initial_output is not None:
+            out = cp.full((n_points, n_frames), initial_output, dtype=channel_data.dtype)
 
         result = beamform(channel_data, coords, grid, arrivals, out=out, synchronize=False, **kwargs)
         # Queue the consumer on the launch stream before waiting for completion.
         power = cp.sum(cp.abs(result) ** 2, axis=-1)
         cp.cuda.Stream.null.synchronize()
+        assert bool(cp.any(expected != 0))
+        expected = expected + (initial_output or 0)
+        cp.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-6)
         cp.testing.assert_allclose(power, cp.sum(cp.abs(expected) ** 2, axis=-1), rtol=1e-5, atol=1e-6)
 
 

@@ -819,11 +819,12 @@ void _beamform_impl(
     {
     TIME_SECTION("kernel_execution");
 
-    // Time the kernel execution with native CUDA events
-    // which only times the kernel execution, not the kernel launch
-    checkCudaErrors(cudaEventCreate(&start));
-    checkCudaErrors(cudaEventCreate(&stop));
-    checkCudaErrors(cudaEventRecord(start));
+    if (synchronize) {
+        // Native CUDA events time GPU execution rather than host launch overhead.
+        checkCudaErrors(cudaEventCreate(&start));
+        checkCudaErrors(cudaEventCreate(&stop));
+        checkCudaErrors(cudaEventRecord(start));
+    }
 #endif
 
     // Process all voxels with the kernel
@@ -899,11 +900,10 @@ void _beamform_impl(
         float milliseconds = 0;
         checkCudaErrors(cudaEventElapsedTime(&milliseconds, start, stop));
         std::cout << "Kernel execution time: " << milliseconds << " ms" << std::endl;
-    }
 
-    // Clean up timing events
-    checkCudaErrors(cudaEventDestroy(start));
-    checkCudaErrors(cudaEventDestroy(stop));
+        checkCudaErrors(cudaEventDestroy(start));
+        checkCudaErrors(cudaEventDestroy(stop));
+    }
 #endif
 }
 
@@ -1172,10 +1172,6 @@ void beamform(
     }
 #endif
 
-#ifdef CUDA_PROFILE
-    {
-        TIME_SECTION("call_beamform_impl");
-#endif
     // If the array was manually copied to GPU device memory, use the device memory pointer
     // else use the nanobind array data, which was already on GPU device memory
     const DataType* d_channel_data = d_unique_channel_data ? thrust::raw_pointer_cast(d_unique_channel_data->get()) : channel_data.data();
@@ -1183,6 +1179,10 @@ void beamform(
     const float3* d_scan_coords_m = d_unique_scan_coords_m ? thrust::raw_pointer_cast(d_unique_scan_coords_m->get()) : reinterpret_cast<const float3*>(scan_coords_m.data());
     const float* d_tx_arrivals_s = d_unique_tx_arrivals_s ? thrust::raw_pointer_cast(d_unique_tx_arrivals_s->get()) : tx_wave_arrivals_s.data();
     DataType* d_out = d_unique_out ? thrust::raw_pointer_cast(d_unique_out->get()) : out.data();
+#ifdef CUDA_PROFILE
+    {
+        TIME_SECTION("call_beamform_impl");
+#endif
     if constexpr (std::is_same_v<DataType, std::complex<float>>) {
         _beamform_impl<float2>(
             reinterpret_cast<const float2*>(d_channel_data),
